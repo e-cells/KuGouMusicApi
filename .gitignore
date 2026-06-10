@@ -32,7 +32,6 @@ bin/*
 .admin_config.json
 .admin_devices.json
 .kugou_guid
-util/config.json
 
 # ==============================
 # 备份文件 (避免提交测试垃圾)
