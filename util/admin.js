@@ -6,8 +6,6 @@ const { cryptoMd5 } = require('./crypto');
 const { randomString } = require('./util');
 const rateLimit = require('express-rate-limit'); 
 
-// ================= 修改核心开始 =================
-// 改变存放路径，将文件放到 /app/data 目录下
 const dataDir = path.join(process.cwd(), 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
@@ -15,7 +13,6 @@ if (!fs.existsSync(dataDir)) {
 
 const configPath = path.join(dataDir, '.admin_config.json');
 const devicesPath = path.join(dataDir, '.admin_devices.json'); 
-// ================= 修改核心结束 =================
 
 let adminConfig = {
   isSetup: false,
@@ -37,7 +34,6 @@ if (fs.existsSync(configPath)) {
   }
 }
 
-// 【性能优化】：将配置保存改为异步非阻塞操作
 const saveConfig = () => {
   fs.promises.writeFile(configPath, JSON.stringify(adminConfig, null, 2), 'utf8')
     .catch(e => console.error('[Admin] 异步保存配置失败:', e));
@@ -54,6 +50,25 @@ if (fs.existsSync(devicesPath)) {
     }
   } catch (e) {}
 }
+
+// ================= 新增：统一的设备数据保存功能 =================
+const saveDevices = () => {
+  try {
+    const obj = {};
+    for (const [k, v] of connectedDevices.entries()) {
+      obj[k] = v;
+    }
+    // 注意：这里改成了 sync 同步写入，确保在 Docker 容器被杀死前一定能写完
+    fs.writeFileSync(devicesPath, JSON.stringify(obj), 'utf8');
+  } catch(e) {
+    console.error('[Admin] 组装/持久化设备数据失败:', e);
+  }
+};
+
+// 关键修复：监听 Docker 容器关闭信号（重启或销毁前触发），立刻抢救内存数据！
+process.on('SIGTERM', saveDevices);
+process.on('SIGINT', saveDevices);
+// ================================================================
 
 const getNickScore = (name) => {
   if (!name) return 0;
@@ -80,17 +95,8 @@ setInterval(() => {
     }
   }
   
-  // 【性能优化】：后台异步静默写入硬盘，不阻塞主线程
-  try {
-    const obj = {};
-    for (const [k, v] of connectedDevices.entries()) {
-      obj[k] = v;
-    }
-    fs.promises.writeFile(devicesPath, JSON.stringify(obj), 'utf8')
-      .catch(e => console.error('[Admin] 后台持久化设备数据失败:', e));
-  } catch(e) {
-    console.error('[Admin] 组装设备数据失败:', e);
-  }
+  // 定时器中调用刚才写好的保存方法
+  saveDevices();
 }, 5 * 60 * 1000); 
 
 const adminMiddleware = (req, res, next) => {
@@ -241,6 +247,7 @@ adminRouter.post('/api/devices/delete', (req, res) => {
   if (Array.isArray(guids)) {
     guids.forEach(g => connectedDevices.delete(g));
   }
+  saveDevices(); // 新增：删除设备后立刻写入硬盘
   res.json({ msg: '删除成功' });
 });
 
