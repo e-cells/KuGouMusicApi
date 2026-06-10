@@ -9,7 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen text-gray-800">
-    <div id="app" class="container mx-auto p-4 max-w-[1250px]">
+    <div id="app" class="container mx-auto p-4 max-w-[1500px]">
         
         <div class="text-center my-8">
             <h1 class="text-3xl font-bold text-blue-600 tracking-wider">易格音乐 API 控制台</h1>
@@ -101,7 +101,7 @@
                                 <th class="p-4 text-center w-12">
                                     <input type="checkbox" :checked="isAllSelected" @change="toggleSelectAll" class="w-4 h-4 text-blue-600 cursor-pointer rounded">
                                 </th>
-                                <th class="p-4 font-semibold w-40">设备 GUID</th>
+                                <th class="p-4 font-semibold w-64">设备 GUID</th>
                                 <th class="p-4 font-semibold">用户昵称</th>
                                 <th class="p-4 font-semibold">IP 地址</th>
                                 <th class="p-4 font-semibold text-center">用户状态</th>
@@ -115,7 +115,16 @@
                                 <td class="p-4 text-center align-middle">
                                     <input type="checkbox" v-model="selectedGuids" :value="device.guid" class="w-4 h-4 text-blue-600 cursor-pointer rounded">
                                 </td>
-                                <td class="p-4 font-mono text-xs text-gray-400 align-middle truncate max-w-[10rem]">{{ device.guid }}</td>
+                                
+                                <td class="p-4 font-mono text-xs text-gray-500 align-middle whitespace-nowrap">
+                                    <div class="flex items-center">
+                                        <span class="inline-block w-44 truncate">{{ displayGuid(device.guid) }}</span>
+                                        <button @click="toggleGuid(device.guid)" class="ml-1.5 text-gray-400 hover:text-blue-500 transition focus:outline-none" :title="revealedGuids.includes(device.guid) ? '点击隐藏' : '点击显示完整内容'">
+                                            <svg v-if="!revealedGuids.includes(device.guid)" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
+                                            <svg v-else class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+                                        </button>
+                                    </div>
+                                </td>
                                 
                                 <td class="p-4 text-sm font-bold align-middle" :class="device.isLogged ? 'text-purple-600' : 'text-gray-500'">{{ device.nickname }}</td>
                                 
@@ -196,9 +205,12 @@
                 const devices = ref([]);
                 const selectedGuids = ref([]); 
                 
+                // 【新增】：追踪哪些 GUID 被点击“睁眼”展示出来了
+                const revealedGuids = ref([]);
+                
                 const searchQuery = ref('');
                 const currentPage = ref(1);
-                const pageSize = ref(15); // 为了美观，改为每页15条
+                const pageSize = ref(15); 
                 
                 const nowTime = ref(Date.now());
                 let timeTracker = null;
@@ -267,6 +279,22 @@
                     } catch (e) { }
                 };
 
+                // 【新增】：脱敏掩码与显示逻辑
+                const toggleGuid = (guid) => {
+                    if (revealedGuids.value.includes(guid)) {
+                        revealedGuids.value = revealedGuids.value.filter(g => g !== guid);
+                    } else {
+                        revealedGuids.value.push(guid);
+                    }
+                };
+
+                const displayGuid = (guid) => {
+                    if (!guid) return '';
+                    if (revealedGuids.value.includes(guid) || guid.length < 16) return guid;
+                    // 取前 8 位，后 6 位，中间打星号隐藏
+                    return guid.substring(0, 8) + '******' + guid.substring(guid.length - 6);
+                };
+
                 const filteredDevices = computed(() => {
                     if (!searchQuery.value) return devices.value;
                     const q = searchQuery.value.toLowerCase().trim();
@@ -327,9 +355,7 @@
                     fetchData();
                 };
 
-                // 【核心优化：智能一键清理离线访客逻辑】
                 const clearOfflineGuests = async () => {
-                    // 筛选规则：未登录、且不是白名单、且不是黑名单、且已经离线
                     const targets = devices.value.filter(d => 
                         !d.isLogged && 
                         !whitelist.value.includes(d.guid) && 
@@ -367,6 +393,7 @@
                 return { 
                     view, form, mode, whitelist, blacklist, devices, selectedGuids, isAllSelected,
                     searchQuery, currentPage, totalPages, pageSize, paginatedDevices, filteredDevices, 
+                    revealedGuids, toggleGuid, displayGuid, // 暴露掩码方法
                     handleSetup, handleLogin, handleLogout, 
                     setMode, setPermission, toggleSelectAll, batchDelete, clearOfflineGuests,
                     formatTime, fetchData, isOnline 
