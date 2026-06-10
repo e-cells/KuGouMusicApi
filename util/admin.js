@@ -6,8 +6,16 @@ const { cryptoMd5 } = require('./crypto');
 const { randomString } = require('./util');
 const rateLimit = require('express-rate-limit'); 
 
-const configPath = path.join(process.cwd(), '.admin_config.json');
-const devicesPath = path.join(process.cwd(), '.admin_devices.json'); 
+// ================= 修改核心开始 =================
+// 改变存放路径，将文件放到 /app/data 目录下
+const dataDir = path.join(process.cwd(), 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const configPath = path.join(dataDir, '.admin_config.json');
+const devicesPath = path.join(dataDir, '.admin_devices.json'); 
+// ================= 修改核心结束 =================
 
 let adminConfig = {
   isSetup: false,

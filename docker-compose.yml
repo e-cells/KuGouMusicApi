@@ -9,8 +9,7 @@ services:
     ports:
       - "8542:3000"
     volumes:
-      - "/mydocker/KuGouMusicApi/.admin_config.json:/app/.admin_config.json"
-      - "/mydocker/KuGouMusicApi/.admin_devices.json:/app/.admin_devices.json"
+      - "/mydocker/KuGouMusicApi/data:/app/data"
     logging:
       driver: "json-file"
       options:
