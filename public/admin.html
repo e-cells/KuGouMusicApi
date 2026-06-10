@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-width=1.0">
+    <title>易格音乐 API 控制台</title>
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%232563eb'%3E%3Cpath d='M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'/%3E%3C/svg%3E">
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen text-gray-800">
+    <div id="app" class="container mx-auto p-4 max-w-[1200px]">
+        
+        <div class="text-center my-8">
+            <h1 class="text-3xl font-bold text-blue-600">易格音乐 API 控制台</h1>
+        </div>
+
+        <div v-if="view === 'setup'" class="max-w-md mx-auto bg-white p-8 rounded-lg shadow-md">
+            <h2 class="text-xl font-bold mb-6 text-center">系统初始化设置</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">管理员账号</label>
+                    <input v-model="form.username" type="text" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">管理员密码</label>
+                    <input v-model="form.password" type="password" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                </div>
+                <button @click="handleSetup" class="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 font-bold transition">确认初始化</button>
+            </div>
+        </div>
+
+        <div v-if="view === 'login'" class="max-w-md mx-auto bg-white p-8 rounded-lg shadow-md">
+            <h2 class="text-xl font-bold mb-6 text-center">管理员登录</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">账号</label>
+                    <input v-model="form.username" type="text" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">密码</label>
+                    <input v-model="form.password" type="password" @keyup.enter="handleLogin" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                </div>
+                <button @click="handleLogin" class="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 font-bold transition">登录</button>
+            </div>
+        </div>
+
+        <div v-if="view === 'dashboard'" class="space-y-6">
+            
+            <div class="bg-white p-4 rounded-lg shadow-md flex justify-between items-center">
+                <div class="flex items-center space-x-2">
+                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                    <span class="font-medium text-gray-700">系统运行正常</span>
+                </div>
+                <button @click="handleLogout" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-red-50 hover:text-red-600 font-medium transition duration-200">
+                    退出登录
+                </button>
+            </div>
+
+            <div class="bg-white p-6 rounded-lg shadow-md flex justify-between items-center">
+                <div>
+                    <h2 class="text-xl font-bold">安全模式控制</h2>
+                    <p class="text-sm text-gray-500 mt-1">切换服务全局访问策略</p>
+                </div>
+                <div class="flex space-x-2 border bg-gray-50 rounded-lg p-1">
+                    <button @click="setMode('unrestricted')" :class="['px-4 py-2 rounded font-medium transition', mode === 'unrestricted' ? 'bg-green-500 text-white shadow' : 'text-gray-600 hover:bg-gray-200']">无限制模式</button>
+                    <button @click="setMode('whitelist')" :class="['px-4 py-2 rounded font-medium transition', mode === 'whitelist' ? 'bg-red-500 text-white shadow' : 'text-gray-600 hover:bg-gray-200']">仅白名单模式</button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                <div class="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
+                    <div class="flex items-center space-x-4">
+                        <h2 class="text-lg font-bold">已连接设备列表</h2>
+                        <span class="text-xs text-gray-400"> ( 5 分钟内活跃视为在线 )</span>
+                    </div>
+                    <button @click="fetchData" class="text-sm text-blue-600 hover:underline">立即刷新</button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-600 text-sm">
+                                <th class="p-4 font-semibold w-48">设备 GUID</th>
+                                <th class="p-4 font-semibold">用户昵称</th>
+                                <th class="p-4 font-semibold">IP 地址</th>
+                                <th class="p-4 font-semibold text-center">用户状态</th>
+                                <th class="p-4 font-semibold">最后在线时间</th>
+                                <th class="p-4 font-semibold text-center">访问权限</th>
+                                <th class="p-4 font-semibold text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="device in devices" :key="device.guid" class="border-b hover:bg-gray-50 transition">
+                                <td class="p-4 font-mono text-xs text-gray-400 align-middle truncate max-w-[12rem]">{{ device.guid }}</td>
+                                
+                                <td class="p-4 text-sm font-bold align-middle" :class="device.isLogged ? 'text-purple-600' : 'text-gray-500'">
+                                    {{ device.nickname }}
+                                </td>
+                                
+                                <td class="p-4 text-sm align-middle text-gray-600">{{ device.ip }}</td>
+                                
+                                <td class="p-4 text-center align-middle">
+                                    <span v-if="device.isLogged && isOnline(device.lastSeen)" class="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full font-bold shadow-sm whitespace-nowrap">用户在线</span>
+                                    <span v-else-if="device.isLogged && !isOnline(device.lastSeen)" class="px-2 py-1 text-xs bg-gray-100 text-gray-400 rounded-full font-bold whitespace-nowrap">用户离线</span>
+                                    <span v-else-if="!device.isLogged && isOnline(device.lastSeen)" class="px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded-full font-bold shadow-sm whitespace-nowrap">访客在线</span>
+                                    <span v-else class="px-2 py-1 text-xs bg-gray-100 text-gray-400 rounded-full font-bold whitespace-nowrap">访客离线</span>
+                                </td>
+
+                                <td class="p-4 text-sm align-middle text-gray-500">{{ formatTime(device.lastSeen) }}</td>
+                                
+                                <td class="p-4 text-center align-middle">
+                                    <span v-if="whitelist.includes(device.guid)" class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full font-bold whitespace-nowrap">已加白名单</span>
+                                    <span v-else class="px-2 py-1 text-xs bg-red-50 text-red-400 rounded-full whitespace-nowrap">未加白名单</span>
+                                </td>
+                                
+                                <td class="p-4 text-center align-middle">
+                                    <button v-if="!whitelist.includes(device.guid)" @click="toggleWhitelist(device.guid, 'add')" class="px-3 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-600 hover:text-white border border-blue-200 text-sm font-medium transition whitespace-nowrap">允许访问</button>
+                                    <button v-else @click="toggleWhitelist(device.guid, 'remove')" class="px-3 py-1 bg-white text-red-500 rounded hover:bg-red-500 hover:text-white border border-red-200 text-sm font-medium transition whitespace-nowrap">移除权限</button>
+                                </td>
+                            </tr>
+                            <tr v-if="devices.length === 0">
+                                <td colspan="7" class="p-8 text-center text-gray-400">暂无连接设备记录</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, onUnmounted } = Vue;
+
+        createApp({
+            setup() {
+                const view = ref(''); 
+                const form = ref({ username: '', password: '' });
+                const token = ref(localStorage.getItem('admin_token') || '');
+                const mode = ref('unrestricted');
+                const whitelist = ref([]);
+                const devices = ref([]);
+                
+                // 【核心逻辑：动态时间追踪器】
+                const nowTime = ref(Date.now());
+                let timeTracker = null;
+
+                const req = async (path, method = 'GET', body = null) => {
+                    const headers = { 'Content-Type': 'application/json' };
+                    if (token.value) headers['Authorization'] = `Bearer ${token.value}`;
+                    const res = await fetch(`/admin${path}`, {
+                        method, headers,
+                        body: body ? JSON.stringify(body) : null
+                    });
+                    if (res.status === 401) {
+                        handleLogout(); 
+                        throw new Error('Unauthorized');
+                    }
+                    return res.json();
+                };
+
+                const checkStatus = async () => {
+                    try {
+                        const { isSetup } = await req('/api/status');
+                        if (!isSetup) {
+                            view.value = 'setup';
+                        } else if (!token.value) {
+                            view.value = 'login';
+                        } else {
+                            view.value = 'dashboard';
+                            fetchData();
+                        }
+                    } catch (e) { }
+                };
+
+                const handleSetup = async () => {
+                    const data = await req('/api/setup', 'POST', form.value);
+                    if (data.msg === '管理员初始化成功') {
+                        alert('初始化成功，请登录');
+                        view.value = 'login';
+                        form.value.password = '';
+                    } else {
+                        alert(data.msg);
+                    }
+                };
+
+                const handleLogin = async () => {
+                    const data = await req('/api/login', 'POST', form.value);
+                    if (data.token) {
+                        token.value = data.token;
+                        localStorage.setItem('admin_token', data.token);
+                        view.value = 'dashboard';
+                        form.value.password = ''; 
+                        fetchData();
+                    } else {
+                        alert(data.msg || '登录失败');
+                    }
+                };
+
+                const handleLogout = () => {
+                    token.value = '';
+                    localStorage.removeItem('admin_token');
+                    view.value = 'login';
+                };
+
+                const fetchData = async () => {
+                    try {
+                        const config = await req('/api/config');
+                        mode.value = config.mode;
+                        whitelist.value = config.whitelist;
+                        devices.value = await req('/api/devices');
+                    } catch (e) { }
+                };
+
+                const setMode = async (newMode) => {
+                    if (newMode === 'whitelist' && !confirm('开启白名单模式后，未在白名单中的设备将无法连接，是否确认开启？')) return;
+                    await req('/api/config/mode', 'POST', { mode: newMode });
+                    mode.value = newMode;
+                };
+
+                const toggleWhitelist = async (guid, action) => {
+                    const data = await req('/api/whitelist', 'POST', { guid, action });
+                    whitelist.value = data.whitelist;
+                };
+
+                // 【状态计算】：根据当前活的时间戳与设备最后活跃时间比对，5分钟(300000ms)内算作在线
+                const isOnline = (lastSeen) => {
+                    return (nowTime.value - lastSeen) < 5 * 60 * 1000;
+                };
+
+                const formatTime = (ts) => {
+                    const d = new Date(ts);
+                    return `${d.getMonth()+1}-${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
+                };
+
+                onMounted(() => {
+                    checkStatus();
+                    // 启动实时时间追踪（每秒更新当前时间，实现页面标签颜色自动切换而不必强制刷新数据）
+                    timeTracker = setInterval(() => { nowTime.value = Date.now(); }, 1000);
+                    // 仍保留每 15 秒向服务器获取一次最新的活跃数据
+                    setInterval(() => { if (view.value === 'dashboard') fetchData(); }, 15000);
+                });
+
+                onUnmounted(() => {
+                    if (timeTracker) clearInterval(timeTracker);
+                });
+
+                return { 
+                    view, form, mode, whitelist, devices, 
+                    handleSetup, handleLogin, handleLogout, 
+                    setMode, toggleWhitelist, formatTime, fetchData, isOnline 
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

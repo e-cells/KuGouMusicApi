@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  kugou-api:
+    image: hly307765464/kugou-music-api:latest  # 直接拉取 Docker Hub 上的最新镜像
+    container_name: kugou-music-api
+    restart: unless-stopped
+    environment:
+      - platform=lite  # 启用酷狗概念版接口
+    ports:
+      - "8542:3000"    # 将宿主机的 8542 端口映射到容器内部的 3000 端口
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"   # 限制单个日志文件最大为 10M
+        max-file: "3"     # 最多保留 3 个日志文件（超出的旧日志会被自动彻底清理）
