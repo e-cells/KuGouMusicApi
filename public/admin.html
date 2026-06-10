@@ -5,28 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-width=1.0">
     <title>易格音乐 API 控制台</title>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%232563eb'%3E%3Cpath d='M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z'/%3E%3C/svg%3E">
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.staticfile.net/vue/3.3.4/vue.global.prod.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen text-gray-800">
-    <div id="app" class="container mx-auto p-4 max-w-[1200px]">
+    <div id="app" class="container mx-auto p-4 max-w-[1250px]">
         
         <div class="text-center my-8">
-            <h1 class="text-3xl font-bold text-blue-600">易格音乐 API 控制台</h1>
+            <h1 class="text-3xl font-bold text-blue-600 tracking-wider">易格音乐 API 控制台</h1>
         </div>
 
         <div v-if="view === 'setup'" class="max-w-md mx-auto bg-white p-8 rounded-lg shadow-md">
             <h2 class="text-xl font-bold mb-6 text-center">系统初始化设置</h2>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium mb-1">管理员账号</label>
-                    <input v-model="form.username" type="text" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    <label class="block text-sm font-medium mb-1 text-gray-600">管理员账号</label>
+                    <input v-model="form.username" type="text" class="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none transition">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium mb-1">管理员密码</label>
-                    <input v-model="form.password" type="password" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    <label class="block text-sm font-medium mb-1 text-gray-600">管理员密码</label>
+                    <input v-model="form.password" type="password" class="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none transition">
                 </div>
-                <button @click="handleSetup" class="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 font-bold transition">确认初始化</button>
+                <button @click="handleSetup" class="w-full bg-blue-600 text-white p-2.5 rounded-lg hover:bg-blue-700 font-bold transition shadow-md">确认初始化</button>
             </div>
         </div>
 
@@ -34,103 +34,155 @@
             <h2 class="text-xl font-bold mb-6 text-center">管理员登录</h2>
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium mb-1">账号</label>
-                    <input v-model="form.username" type="text" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    <label class="block text-sm font-medium mb-1 text-gray-600">账号</label>
+                    <input v-model="form.username" type="text" class="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none transition">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium mb-1">密码</label>
-                    <input v-model="form.password" type="password" @keyup.enter="handleLogin" class="w-full border p-2 rounded focus:ring-2 focus:ring-blue-400 focus:outline-none">
+                    <label class="block text-sm font-medium mb-1 text-gray-600">密码</label>
+                    <input v-model="form.password" type="password" @keyup.enter="handleLogin" class="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-400 focus:outline-none transition">
                 </div>
-                <button @click="handleLogin" class="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 font-bold transition">登录</button>
+                <button @click="handleLogin" class="w-full bg-blue-600 text-white p-2.5 rounded-lg hover:bg-blue-700 font-bold transition shadow-md">登录</button>
             </div>
         </div>
 
-        <div v-if="view === 'dashboard'" class="space-y-6">
+        <div v-if="view === 'dashboard'" class="space-y-6 animate-[fadeIn_0.3s_ease-out]">
             
-            <div class="bg-white p-4 rounded-lg shadow-md flex justify-between items-center">
+            <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-100 flex justify-between items-center">
                 <div class="flex items-center space-x-2">
-                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                    <span class="relative flex h-3 w-3">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
                     <span class="font-medium text-gray-700">系统运行正常</span>
                 </div>
-                <button @click="handleLogout" class="px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded hover:bg-red-50 hover:text-red-600 font-medium transition duration-200">
-                    退出登录
-                </button>
+                <button @click="handleLogout" class="px-4 py-2 text-sm text-gray-600 bg-gray-50 rounded-lg hover:bg-red-50 hover:text-red-600 font-medium transition duration-200 border border-gray-200">退出登录</button>
             </div>
 
-            <div class="bg-white p-6 rounded-lg shadow-md flex justify-between items-center">
+            <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-100 flex justify-between items-center">
                 <div>
-                    <h2 class="text-xl font-bold">安全模式控制</h2>
-                    <p class="text-sm text-gray-500 mt-1">切换服务全局访问策略</p>
+                    <h2 class="text-xl font-bold text-gray-800">全局模式控制</h2>
+                    <p class="text-sm text-gray-500 mt-1">控制默认设备的连入权限 (注:黑名单设备无论何种模式均拦截)</p>
                 </div>
-                <div class="flex space-x-2 border bg-gray-50 rounded-lg p-1">
-                    <button @click="setMode('unrestricted')" :class="['px-4 py-2 rounded font-medium transition', mode === 'unrestricted' ? 'bg-green-500 text-white shadow' : 'text-gray-600 hover:bg-gray-200']">无限制模式</button>
-                    <button @click="setMode('whitelist')" :class="['px-4 py-2 rounded font-medium transition', mode === 'whitelist' ? 'bg-red-500 text-white shadow' : 'text-gray-600 hover:bg-gray-200']">仅白名单模式</button>
+                <div class="flex space-x-2 border bg-gray-50 rounded-lg p-1.5 shadow-inner">
+                    <button @click="setMode('unrestricted')" :class="['px-5 py-2 rounded-md font-medium transition', mode === 'unrestricted' ? 'bg-green-500 text-white shadow' : 'text-gray-600 hover:bg-gray-200']">无限制模式</button>
+                    <button @click="setMode('whitelist')" :class="['px-5 py-2 rounded-md font-medium transition', mode === 'whitelist' ? 'bg-orange-500 text-white shadow' : 'text-gray-600 hover:bg-gray-200']">仅白名单模式</button>
                 </div>
             </div>
 
-            <div class="bg-white rounded-lg shadow-md overflow-hidden">
+            <div class="bg-white rounded-lg shadow-md border border-gray-100 overflow-hidden">
                 <div class="px-6 py-4 border-b bg-gray-50 flex justify-between items-center">
                     <div class="flex items-center space-x-4">
-                        <h2 class="text-lg font-bold">已连接设备列表</h2>
-                        <span class="text-xs text-gray-400"> ( 5 分钟内活跃视为在线 )</span>
+                        <h2 class="text-lg font-bold text-gray-800">已连接设备列表</h2>
+                        <span class="text-xs text-gray-400 bg-gray-200 px-2 py-1 rounded-md">( 5 分钟内活跃视为在线 )</span>
                     </div>
-                    <button @click="fetchData" class="text-sm text-blue-600 hover:underline">立即刷新</button>
+                    
+                    <div class="flex items-center space-x-3">
+                        <div class="flex items-center bg-white border border-gray-300 rounded-lg px-3 py-1.5 focus-within:ring-2 focus-within:ring-blue-400 transition shadow-sm">
+                            <svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <input v-model="searchQuery" type="text" placeholder="搜索 GUID / 昵称 / IP" class="bg-transparent outline-none text-sm w-48 text-gray-700">
+                            <button v-if="searchQuery" @click="searchQuery = ''" class="text-gray-400 hover:text-gray-600 ml-1">&times;</button>
+                        </div>
+                        
+                        <button v-if="selectedGuids.length > 0" @click="batchDelete" class="text-sm px-4 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 font-medium transition shadow-sm">清除选中 ({{ selectedGuids.length }})</button>
+                        
+                        <button @click="clearOfflineGuests" class="flex items-center text-sm px-3 py-1.5 text-gray-600 bg-white hover:bg-gray-100 border border-gray-300 rounded-lg transition shadow-sm">
+                            <svg class="w-4 h-4 mr-1.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            一键清理访客
+                        </button>
+                        
+                        <button @click="fetchData" class="text-sm px-3 py-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition border border-blue-200">刷新</button>
+                    </div>
                 </div>
-                <div class="overflow-x-auto">
+
+                <div class="overflow-x-auto min-h-[400px]">
                     <table class="w-full text-left">
                         <thead>
-                            <tr class="bg-gray-100 text-gray-600 text-sm">
-                                <th class="p-4 font-semibold w-48">设备 GUID</th>
+                            <tr class="bg-gray-100/50 text-gray-600 text-sm border-b border-gray-200">
+                                <th class="p-4 text-center w-12">
+                                    <input type="checkbox" :checked="isAllSelected" @change="toggleSelectAll" class="w-4 h-4 text-blue-600 cursor-pointer rounded">
+                                </th>
+                                <th class="p-4 font-semibold w-40">设备 GUID</th>
                                 <th class="p-4 font-semibold">用户昵称</th>
                                 <th class="p-4 font-semibold">IP 地址</th>
                                 <th class="p-4 font-semibold text-center">用户状态</th>
-                                <th class="p-4 font-semibold">最后在线时间</th>
                                 <th class="p-4 font-semibold text-center">访问权限</th>
-                                <th class="p-4 font-semibold text-center">操作</th>
+                                <th class="p-4 font-semibold">最后活跃</th>
+                                <th class="p-4 font-semibold text-center w-48">安全操作</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr v-for="device in devices" :key="device.guid" class="border-b hover:bg-gray-50 transition">
-                                <td class="p-4 font-mono text-xs text-gray-400 align-middle truncate max-w-[12rem]">{{ device.guid }}</td>
-                                
-                                <td class="p-4 text-sm font-bold align-middle" :class="device.isLogged ? 'text-purple-600' : 'text-gray-500'">
-                                    {{ device.nickname }}
+                            <tr v-for="device in paginatedDevices" :key="device.guid" class="border-b border-gray-100 hover:bg-blue-50/50 transition duration-150">
+                                <td class="p-4 text-center align-middle">
+                                    <input type="checkbox" v-model="selectedGuids" :value="device.guid" class="w-4 h-4 text-blue-600 cursor-pointer rounded">
                                 </td>
+                                <td class="p-4 font-mono text-xs text-gray-400 align-middle truncate max-w-[10rem]">{{ device.guid }}</td>
+                                
+                                <td class="p-4 text-sm font-bold align-middle" :class="device.isLogged ? 'text-purple-600' : 'text-gray-500'">{{ device.nickname }}</td>
                                 
                                 <td class="p-4 text-sm align-middle text-gray-600">{{ device.ip }}</td>
                                 
                                 <td class="p-4 text-center align-middle">
-                                    <span v-if="device.isLogged && isOnline(device.lastSeen)" class="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full font-bold shadow-sm whitespace-nowrap">用户在线</span>
-                                    <span v-else-if="device.isLogged && !isOnline(device.lastSeen)" class="px-2 py-1 text-xs bg-gray-100 text-gray-400 rounded-full font-bold whitespace-nowrap">用户离线</span>
-                                    <span v-else-if="!device.isLogged && isOnline(device.lastSeen)" class="px-2 py-1 text-xs bg-blue-100 text-blue-600 rounded-full font-bold shadow-sm whitespace-nowrap">访客在线</span>
-                                    <span v-else class="px-2 py-1 text-xs bg-gray-100 text-gray-400 rounded-full font-bold whitespace-nowrap">访客离线</span>
+                                    <span v-if="device.isLogged && isOnline(device.lastSeen)" class="px-2.5 py-1 text-xs bg-purple-100 text-purple-700 rounded-full font-bold shadow-sm whitespace-nowrap">用户在线</span>
+                                    <span v-else-if="device.isLogged && !isOnline(device.lastSeen)" class="px-2.5 py-1 text-xs bg-gray-100 text-gray-400 rounded-full font-bold whitespace-nowrap border border-gray-200">用户离线</span>
+                                    <span v-else-if="!device.isLogged && isOnline(device.lastSeen)" class="px-2.5 py-1 text-xs bg-blue-100 text-blue-600 rounded-full font-bold shadow-sm whitespace-nowrap">访客在线</span>
+                                    <span v-else class="px-2.5 py-1 text-xs bg-gray-100 text-gray-400 rounded-full font-bold whitespace-nowrap border border-gray-200">访客离线</span>
                                 </td>
 
-                                <td class="p-4 text-sm align-middle text-gray-500">{{ formatTime(device.lastSeen) }}</td>
-                                
                                 <td class="p-4 text-center align-middle">
-                                    <span v-if="whitelist.includes(device.guid)" class="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full font-bold whitespace-nowrap">已加白名单</span>
-                                    <span v-else class="px-2 py-1 text-xs bg-red-50 text-red-400 rounded-full whitespace-nowrap">未加白名单</span>
+                                    <span v-if="blacklist.includes(device.guid)" class="px-2.5 py-1 text-xs bg-red-100 text-red-700 rounded-full font-bold whitespace-nowrap">被拉黑</span>
+                                    <span v-else-if="whitelist.includes(device.guid)" class="px-2.5 py-1 text-xs bg-green-100 text-green-700 rounded-full font-bold whitespace-nowrap border border-green-200">白名单</span>
+                                    <span v-else class="px-2.5 py-1 text-xs bg-gray-50 text-gray-500 rounded-full whitespace-nowrap border border-gray-200">普通设备</span>
                                 </td>
                                 
+                                <td class="p-4 text-sm align-middle text-gray-500 whitespace-nowrap">{{ formatTime(device.lastSeen) }}</td>
+                                
                                 <td class="p-4 text-center align-middle">
-                                    <button v-if="!whitelist.includes(device.guid)" @click="toggleWhitelist(device.guid, 'add')" class="px-3 py-1 bg-blue-50 text-blue-600 rounded hover:bg-blue-600 hover:text-white border border-blue-200 text-sm font-medium transition whitespace-nowrap">允许访问</button>
-                                    <button v-else @click="toggleWhitelist(device.guid, 'remove')" class="px-3 py-1 bg-white text-red-500 rounded hover:bg-red-500 hover:text-white border border-red-200 text-sm font-medium transition whitespace-nowrap">移除权限</button>
+                                    <div v-if="blacklist.includes(device.guid)" class="flex justify-center space-x-2">
+                                        <button @click="setPermission(device.guid, 'normal')" class="px-3 py-1 bg-white border border-gray-300 text-gray-600 rounded-md hover:bg-gray-100 text-xs font-medium transition shadow-sm whitespace-nowrap">恢复普通访客</button>
+                                    </div>
+                                    <div v-else-if="whitelist.includes(device.guid)" class="flex justify-center space-x-2">
+                                        <button @click="setPermission(device.guid, 'normal')" class="px-3 py-1 bg-white border border-gray-300 text-gray-600 rounded-md hover:bg-gray-100 text-xs font-medium transition shadow-sm whitespace-nowrap">取消白名单</button>
+                                        <button @click="setPermission(device.guid, 'blacklist')" class="px-3 py-1 bg-white border border-red-300 text-red-500 rounded-md hover:bg-red-500 hover:text-white text-xs font-medium transition shadow-sm whitespace-nowrap">拉黑</button>
+                                    </div>
+                                    <div v-else class="flex justify-center space-x-2">
+                                        <button @click="setPermission(device.guid, 'whitelist')" class="px-3 py-1 bg-white border border-blue-300 text-blue-600 rounded-md hover:bg-blue-600 hover:text-white text-xs font-medium transition shadow-sm whitespace-nowrap">加白名单</button>
+                                        <button @click="setPermission(device.guid, 'blacklist')" class="px-3 py-1 bg-white border border-red-300 text-red-500 rounded-md hover:bg-red-500 hover:text-white text-xs font-medium transition shadow-sm whitespace-nowrap">拉黑</button>
+                                    </div>
                                 </td>
                             </tr>
-                            <tr v-if="devices.length === 0">
-                                <td colspan="7" class="p-8 text-center text-gray-400">暂无连接设备记录</td>
+                            <tr v-if="paginatedDevices.length === 0">
+                                <td colspan="8" class="p-16 text-center text-gray-400 bg-gray-50/50">
+                                    <div class="flex flex-col items-center">
+                                        <svg class="w-16 h-16 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"></path></svg>
+                                        <span class="text-base">没有找到符合条件的设备记录</span>
+                                    </div>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+                
+                <div class="px-6 py-4 border-t bg-white flex justify-between items-center">
+                    <span class="text-sm text-gray-500">
+                        显示第 {{ filteredDevices.length === 0 ? 0 : (currentPage - 1) * pageSize + 1 }} 到 {{ Math.min(currentPage * pageSize, filteredDevices.length) }} 条，共 <span class="font-bold text-gray-800 text-base mx-1">{{ filteredDevices.length }}</span> 条记录
+                    </span>
+                    <div class="flex items-center space-x-2">
+                        <button @click="currentPage--" :disabled="currentPage === 1" class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white transition shadow-sm text-gray-600">上一页</button>
+                        <span class="text-sm text-gray-600 px-3 font-medium"> {{ currentPage }} / {{ totalPages }} </span>
+                        <button @click="currentPage++" :disabled="currentPage === totalPages || totalPages === 0" class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed bg-white transition shadow-sm text-gray-600">下一页</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="text-center mt-8 text-xs text-gray-400">
+                <p>易格音乐 API 企业级控制台 &copy; 2026</p>
             </div>
         </div>
 
     </div>
 
     <script>
-        const { createApp, ref, onMounted, onUnmounted } = Vue;
+        const { createApp, ref, computed, onMounted, onUnmounted, watch } = Vue;
 
         createApp({
             setup() {
@@ -138,10 +190,16 @@
                 const form = ref({ username: '', password: '' });
                 const token = ref(localStorage.getItem('admin_token') || '');
                 const mode = ref('unrestricted');
-                const whitelist = ref([]);
-                const devices = ref([]);
                 
-                // 【核心逻辑：动态时间追踪器】
+                const whitelist = ref([]);
+                const blacklist = ref([]);
+                const devices = ref([]);
+                const selectedGuids = ref([]); 
+                
+                const searchQuery = ref('');
+                const currentPage = ref(1);
+                const pageSize = ref(15); // 为了美观，改为每页15条
+                
                 const nowTime = ref(Date.now());
                 let timeTracker = null;
 
@@ -162,11 +220,9 @@
                 const checkStatus = async () => {
                     try {
                         const { isSetup } = await req('/api/status');
-                        if (!isSetup) {
-                            view.value = 'setup';
-                        } else if (!token.value) {
-                            view.value = 'login';
-                        } else {
+                        if (!isSetup) view.value = 'setup';
+                        else if (!token.value) view.value = 'login';
+                        else {
                             view.value = 'dashboard';
                             fetchData();
                         }
@@ -179,9 +235,7 @@
                         alert('初始化成功，请登录');
                         view.value = 'login';
                         form.value.password = '';
-                    } else {
-                        alert(data.msg);
-                    }
+                    } else alert(data.msg);
                 };
 
                 const handleLogin = async () => {
@@ -192,9 +246,7 @@
                         view.value = 'dashboard';
                         form.value.password = ''; 
                         fetchData();
-                    } else {
-                        alert(data.msg || '登录失败');
-                    }
+                    } else alert(data.msg || '登录失败');
                 };
 
                 const handleLogout = () => {
@@ -208,9 +260,33 @@
                         const config = await req('/api/config');
                         mode.value = config.mode;
                         whitelist.value = config.whitelist;
+                        blacklist.value = config.blacklist;
                         devices.value = await req('/api/devices');
+                        
+                        selectedGuids.value = selectedGuids.value.filter(g => devices.value.some(d => d.guid === g));
                     } catch (e) { }
                 };
+
+                const filteredDevices = computed(() => {
+                    if (!searchQuery.value) return devices.value;
+                    const q = searchQuery.value.toLowerCase().trim();
+                    return devices.value.filter(d => 
+                        d.guid.toLowerCase().includes(q) ||
+                        (d.nickname && d.nickname.toLowerCase().includes(q)) ||
+                        (d.ip && d.ip.includes(q))
+                    );
+                });
+
+                const totalPages = computed(() => Math.max(1, Math.ceil(filteredDevices.value.length / pageSize.value)));
+                
+                const paginatedDevices = computed(() => {
+                    const start = (currentPage.value - 1) * pageSize.value;
+                    const end = start + pageSize.value;
+                    return filteredDevices.value.slice(start, end);
+                });
+
+                watch(searchQuery, () => { currentPage.value = 1; });
+                watch(totalPages, (newVal) => { if (currentPage.value > newVal) currentPage.value = newVal; });
 
                 const setMode = async (newMode) => {
                     if (newMode === 'whitelist' && !confirm('开启白名单模式后，未在白名单中的设备将无法连接，是否确认开启？')) return;
@@ -218,37 +294,82 @@
                     mode.value = newMode;
                 };
 
-                const toggleWhitelist = async (guid, action) => {
-                    const data = await req('/api/whitelist', 'POST', { guid, action });
+                const setPermission = async (guid, target) => {
+                    let confirmMsg = '';
+                    if (target === 'blacklist') confirmMsg = '确定将此设备拉入黑名单吗？该设备将被彻底拦截。';
+                    else if (target === 'normal') confirmMsg = '确定将此设备恢复为“普通设备”吗？其特殊权限将被移除。';
+                    
+                    if (confirmMsg && !confirm(confirmMsg)) return;
+
+                    const data = await req('/api/permission', 'POST', { guid, target });
                     whitelist.value = data.whitelist;
+                    blacklist.value = data.blacklist;
                 };
 
-                // 【状态计算】：根据当前活的时间戳与设备最后活跃时间比对，5分钟(300000ms)内算作在线
-                const isOnline = (lastSeen) => {
-                    return (nowTime.value - lastSeen) < 5 * 60 * 1000;
+                const isAllSelected = computed(() => {
+                    return paginatedDevices.value.length > 0 && paginatedDevices.value.every(d => selectedGuids.value.includes(d.guid));
+                });
+                
+                const toggleSelectAll = () => {
+                    const pageGuids = paginatedDevices.value.map(d => d.guid);
+                    if (isAllSelected.value) {
+                        selectedGuids.value = selectedGuids.value.filter(g => !pageGuids.includes(g));
+                    } else {
+                        const newSelections = pageGuids.filter(g => !selectedGuids.value.includes(g));
+                        selectedGuids.value.push(...newSelections);
+                    }
                 };
 
+                const batchDelete = async () => {
+                    if (!confirm(`确定要彻底清除选中的 ${selectedGuids.value.length} 条设备记录吗？`)) return;
+                    await req('/api/devices/delete', 'POST', { guids: selectedGuids.value });
+                    selectedGuids.value = [];
+                    fetchData();
+                };
+
+                // 【核心优化：智能一键清理离线访客逻辑】
+                const clearOfflineGuests = async () => {
+                    // 筛选规则：未登录、且不是白名单、且不是黑名单、且已经离线
+                    const targets = devices.value.filter(d => 
+                        !d.isLogged && 
+                        !whitelist.value.includes(d.guid) && 
+                        !blacklist.value.includes(d.guid) && 
+                        !isOnline(d.lastSeen)
+                    ).map(d => d.guid);
+
+                    if (targets.length === 0) {
+                        alert('当前列表中非常干净，没有发现需要清理的离线纯访客记录！');
+                        return;
+                    }
+
+                    if (!confirm(`系统智能扫描出 ${targets.length} 条离线无用的纯访客记录。\n点击“确定”一键清除它们，让列表保持清爽！`)) return;
+
+                    await req('/api/devices/delete', 'POST', { guids: targets });
+                    selectedGuids.value = selectedGuids.value.filter(g => !targets.includes(g));
+                    fetchData();
+                };
+
+                const isOnline = (lastSeen) => (nowTime.value - lastSeen) < 5 * 60 * 1000;
+                
                 const formatTime = (ts) => {
                     const d = new Date(ts);
-                    return `${d.getMonth()+1}-${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}:${d.getSeconds().toString().padStart(2,'0')}`;
+                    return `${d.getMonth()+1}-${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
                 };
 
                 onMounted(() => {
                     checkStatus();
-                    // 启动实时时间追踪（每秒更新当前时间，实现页面标签颜色自动切换而不必强制刷新数据）
                     timeTracker = setInterval(() => { nowTime.value = Date.now(); }, 1000);
-                    // 仍保留每 15 秒向服务器获取一次最新的活跃数据
                     setInterval(() => { if (view.value === 'dashboard') fetchData(); }, 15000);
                 });
 
-                onUnmounted(() => {
-                    if (timeTracker) clearInterval(timeTracker);
-                });
+                onUnmounted(() => { if (timeTracker) clearInterval(timeTracker); });
 
                 return { 
-                    view, form, mode, whitelist, devices, 
+                    view, form, mode, whitelist, blacklist, devices, selectedGuids, isAllSelected,
+                    searchQuery, currentPage, totalPages, pageSize, paginatedDevices, filteredDevices, 
                     handleSetup, handleLogin, handleLogout, 
-                    setMode, toggleWhitelist, formatTime, fetchData, isOnline 
+                    setMode, setPermission, toggleSelectAll, batchDelete, clearOfflineGuests,
+                    formatTime, fetchData, isOnline 
                 };
             }
         }).mount('#app');
