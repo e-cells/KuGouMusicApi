@@ -2,7 +2,7 @@ const { cryptoAesDecrypt, cryptoAesEncrypt, cryptoRSAEncrypt } = require('../uti
 
 module.exports = (params, useAxios) => {
   const dateNow = Date.now();
-  const encrypt = cryptoAesEncrypt({ pwd: params?.password || '', code: '' ,  clienttime_ms: dateNow});
+  const encrypt = cryptoAesEncrypt({ pwd: params?.password || '', code: params?.code || '' ,  clienttime_ms: dateNow});
   const dataMap = {
     plat: 1,
     support_multi: 1,

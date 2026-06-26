@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const express = require('express');
 const decode = require('safe-decode-uri-component');
-const { cookieToJson, randomString, getGuid, calculateMid } = require('./util/util');
+const { cookieToJson, randomString, getGuid, calculateMid, generateWebGLHash } = require('./util/util');
 const { cryptoMd5 } = require('./util/crypto');
 const { createRequest } = require('./util/request');
 const dotenv = require('dotenv');
@@ -122,6 +122,8 @@ async function consturctServer(moduleDefs) {
     ensureCookie('KUGOU_API_GUID', clientGuid);
     ensureCookie('KUGOU_API_DEV', (process.env.KUGOU_API_DEV ?? serverDev).toUpperCase());
     ensureCookie('KUGOU_API_MAC', (process.env.KUGOU_API_MAC ?? '02:00:00:00:00:00').toUpperCase());
+    // WebGL 指纹（听歌识曲 / 行为指纹模拟依赖），未配置则按设备生成
+    ensureCookie('KUGOU_API_WEBGL', process.env.KUGOU_API_WEBGL ?? generateWebGLHash());
 
     req.cookies = cookies;
     next();
@@ -129,6 +131,8 @@ async function consturctServer(moduleDefs) {
 
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
+  // 听歌识曲接口以 application/octet-stream 传输 PCM 二进制，需 raw 解析
+  app.use(express.raw({ type: 'application/octet-stream', limit: '10mb' }));
   app.use(express.static(path.join(__dirname, 'public')));
   app.use('/docs', express.static(path.join(__dirname, 'docs')));
   // ==========================================

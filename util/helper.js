@@ -1,4 +1,5 @@
-const { cryptoMd5 } = require('./crypto');
+const CryptoJS = require('crypto-js');
+const { cryptoMd5, wordArrayFromBuffer } = require('./crypto');
 const { appid: useAppid, liteAppid, clientver: useClientver, liteClientver } = require('./config.json');
 
 /**
@@ -28,6 +29,17 @@ const signatureAndroidParams = (params, data) => {
     .sort()
     .map((key) => `${key}=${typeof params[key] === 'object' ? JSON.stringify(params[key]) : params[key]}`)
     .join('');
+
+  // 二进制 body（如听歌识曲的 PCM 数据）走流式哈希，避免 toString 损坏字节
+  if (Buffer.isBuffer(data)) {
+    const hasher = CryptoJS.algo.MD5.create();
+    hasher.update(CryptoJS.enc.Utf8.parse(str));
+    hasher.update(CryptoJS.enc.Utf8.parse(paramsString));
+    hasher.update(wordArrayFromBuffer(data));
+    hasher.update(CryptoJS.enc.Utf8.parse(str));
+    return hasher.finalize().toString(CryptoJS.enc.Hex);
+  }
+
   return cryptoMd5(`${str}${paramsString}${data || ''}${str}`);
 };
 
