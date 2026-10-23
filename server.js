@@ -133,6 +133,14 @@ async function consturctServer(moduleDefs) {
   app.use(express.urlencoded({ extended: false }));
   // 听歌识曲接口以 application/octet-stream 传输 PCM 二进制，需 raw 解析
   app.use(express.raw({ type: 'application/octet-stream', limit: '10mb' }));
+  // 纯 API 服务：根路径仅返回状态 JSON，无首页（用户信息由客户端自行保存）
+  app.get('/', (_req, res) => {
+    res.status(200).json({
+      code: 200,
+      service: 'KuGouMusicApi',
+      message: '服务运行中，接口文档见 /docs',
+    });
+  });
   app.use(express.static(path.join(__dirname, 'public')));
   app.use('/docs', express.static(path.join(__dirname, 'docs')));
   // ==========================================
