@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   kugou-api:
     image: "hly307765464/kugou-music-api:latest"
