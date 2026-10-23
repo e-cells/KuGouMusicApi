@@ -2,9 +2,10 @@
  * @fileoverview MCP 工具注册表
  *
  * 面向智能音乐助手 Agent 的工具集，分组：
- * - 登录：酷狗 App 扫码 / 微信扫码 / 登录态查询 / 退出
+ * - 登录：酷狗 App 扫码 / 微信扫码 / 概念版微信扫码（kugou_login_concept）/ 登录态查询 / 退出
+ * - 概念版 VIP：签到领取（kugou_sign_in）、VIP 状态查询（kugou_vip_status）
  * - 搜索：歌曲 / 歌词 / MV / 专辑 / 歌手 / 热搜 / 联想建议
- * - 歌曲：播放/下载直链、音质与版权信息、歌词获取
+ * - 歌曲：播放/下载直链（概念版登录后自动走概念版通道，解锁概念版 VIP）、音质与版权信息、歌词获取
  * - 歌单：我的歌单、歌单歌曲、收藏/取消收藏、增删歌曲、新建/删除歌单
  * - MV：播放地址、收藏管理
  * - 歌手/专辑：资料、歌曲列表、关注管理
@@ -13,6 +14,8 @@
  *
  * 所有工具基于项目编程式 API（main.js 导出的模块函数）进程内调用，
  * 会话（设备指纹 + 登录态）由 session.js 统一管理并持久化。
+ * 概念版（lite）身份的调用经 lite.js 转发：概念版 VIP 只对概念版
+ * appid + 概念版 token 生效，与标准版 token 互不兼容。
  */
 
 const fs = require('node:fs');
@@ -21,38 +24,32 @@ const axios = require('axios');
 const qrcode = require('qrcode');
 
 const z = require('zod');
-const api = require('../main');
 const { session } = require('./session');
+const { makeCaller } = require('./call');
+const { callLite, liteStatus, liteLogout } = require('./lite');
 
 // ============================================================
 // 基础调用与裁剪工具
 // ============================================================
 
 /**
- * 调用一个 API 模块函数，自动注入会话 cookie 并回收响应 cookie
+ * 调用一个 API 模块函数（标准版会话），自动注入会话 cookie 并回收响应 cookie
  * @param {string} fn 模块名（module/ 下文件名去掉 .js）
  * @param {Object} params 业务参数
  * @param {Object} [options] { requireLogin: boolean }
  * @returns {Promise<any>} 响应 body
  */
-const call = async (fn, params = {}, options = {}) => {
-  if (options.requireLogin) session.requireLogin();
-  const cookie = await session.ensureDevice();
-  let res;
+const call = makeCaller(session);
+
+/**
+ * 概念版是否已登录（查询失败按未登录处理，不影响标准版流程）
+ */
+const conceptLoggedIn = async () => {
   try {
-    res = await api[fn]({ ...params, cookie });
+    return Boolean((await liteStatus()).logged_in);
   } catch (e) {
-    // 模块拒绝时 e 通常是 {status, body}，也可能是原生 Error
-    const body = e?.body;
-    const msg =
-      body?.error || body?.error_msg || body?.errmsg || body?.msg || body?.info || (e?.message ? String(e.message) : JSON.stringify(body ?? e).slice(0, 300));
-    const ssaHint = body?.ssaCode || body?.edt ? '（触发了酷狗风控验证，建议稍后重试或重新登录）' : '';
-    throw new Error(`接口 ${fn} 调用失败${e?.status ? ` [${e.status}]` : ''}: ${typeof msg === 'string' ? msg.slice(0, 300) : JSON.stringify(msg).slice(0, 300)}${ssaHint}`);
+    return false;
   }
-  if (res && Array.isArray(res.cookie) && res.cookie.length) {
-    session.mergeCookieStrings(res.cookie);
-  }
-  return res?.body ?? res;
 };
 
 const text = (obj) => ({
@@ -126,10 +123,93 @@ const findFavoriteList = (lists = []) => {
   );
 };
 
+/**
+ * 概念版 union VIP（/v1/get_union_vip）响应摘要
+ * 概念版 VIP 是业务线隔离会员：账号级 is_vip/vip_type 不体现，须看 busi_vip
+ * 中 busi_type=concept 的条目（svip=音乐会员、tvip=听书会员等）
+ */
+const conceptVipSummary = (body) => {
+  const d = body?.data || {};
+  const busi = Array.isArray(d.busi_vip) ? d.busi_vip.filter((b) => b.busi_type === 'concept') : [];
+  return {
+    account_is_vip: d.is_vip,
+    vip_type: d.vip_type,
+    concept: busi.map((b) => ({
+      product_type: b.product_type,
+      is_vip: b.is_vip,
+      begin_time: b.vip_begin_time,
+      end_time: b.vip_end_time,
+      daily_quota: b.vip_limit_quota?.total,
+    })),
+  };
+};
+
 const QUALITY_RANK = ['128', '192', '256', '320', 'flac', 'flac24bit', 'high', 'super', 'viper_clear', 'viper_tape', 'viper_atmos', 'multitrack'];
 const qualityIndex = (q) => {
   const i = QUALITY_RANK.indexOf(String(q));
   return i === -1 ? 0 : i;
+};
+
+/**
+ * 归一化歌曲直链响应：
+ * - /v5/url（song_url）：{ status, url: [直链...], backupUrl, extName, fileSize, timeLength, priv_status, hash_offset }
+ * - /v6/priv_url（song_url_new）：{ urls: [{quality, url, ...}] }（保留兼容）
+ */
+const normalizeSongUrls = (body, quality) => {
+  const urls = [];
+  if (Array.isArray(body?.urls)) {
+    for (const u of body.urls) {
+      if (!u?.url) continue;
+      urls.push({
+        quality: u.quality || String(u.bitrate || ''),
+        bitrate: u.bitrate,
+        size: u.filesize || u.size,
+        ext: u.ext || String(u.url).split('.').pop().split('?')[0],
+        url: u.url,
+        backup_urls: u.back_url ? [u.back_url] : u.backupUrls || [],
+        free_trial_start: u.start_ms,
+        free_trial_end: u.end_ms,
+      });
+    }
+  }
+  const mainUrls = (Array.isArray(body?.url) ? body.url : []).filter(Boolean);
+  if (mainUrls.length) {
+    urls.push({
+      quality: String(quality || body?.extName || ''),
+      bitrate: body?.bitRate,
+      size: body?.fileSize,
+      ext: body?.extName || String(mainUrls[0]).split('.').pop().split('?')[0],
+      url: mainUrls[0],
+      backup_urls: [...mainUrls.slice(1), ...(Array.isArray(body?.backupUrl) ? body.backupUrl : [])],
+    });
+  }
+  return urls;
+};
+
+/**
+ * 获取歌曲直链（多通道）：
+ * 概念版 VIP 只对概念版身份（appid=3116 + 概念版 token）生效，因此概念版
+ * 已登录时优先走概念版通道（可解锁概念版 VIP 曲目），失败再回退标准版。
+ * @returns {Promise<{body: any, identity: 'concept' | 'standard'}>}
+ */
+const fetchSongUrl = async (p) => {
+  if (await conceptLoggedIn()) {
+    try {
+      const body = await callLite('song_url', p);
+      const hasUrl = (Array.isArray(body?.url) && body.url.length) || (Array.isArray(body?.urls) && body.urls.length);
+      if (hasUrl || body?.status === 1) return { body, identity: 'concept' };
+    } catch (e) {
+      // 概念版通道失败（风控/参数等），回退标准版
+    }
+  }
+  let body;
+  try {
+    body = await call('song_url', p);
+  } catch (e) {
+    // song_url 走 trackercdn，风控/失败时回退新版 priv_url 通道
+    body = await call('song_url_new', { hash: p.hash, album_audio_id: p.album_audio_id, free_part: p.free_part });
+  }
+  return { body, identity: 'standard' };
 };
 
 /** 清洗文件名中的非法字符 */
@@ -242,6 +322,61 @@ function registerTools(server) {
   );
 
   server.registerTool(
+    'kugou_login_concept',
+    {
+      title: '概念版微信扫码登录',
+      description:
+        '生成概念版（酷狗概念版 appid=3116）微信扫码二维码。概念版 VIP（签到/听歌任务获得）只对概念版身份生效，标准版登录无法使用其下载权限，因此需要单独登录概念版。扫码确认后调用 kugou_login_concept_check（传 uuid）完成登录；登录后签到、歌曲直链/下载工具自动走概念版通道。',
+      inputSchema: {},
+    },
+    async () => {
+      const body = await callLite('login_wx_create', {});
+      const uuid = body?.uuid || body?.data?.uuid;
+      const qr = body?.qrcode || body?.data?.qrcode || {};
+      if (!uuid) throw new Error(`未获取到概念版微信二维码 uuid：${JSON.stringify(body).slice(0, 200)}`);
+      const qrcodeurl = qr.qrcodeurl || `https://open.weixin.qq.com/connect/confirm?uuid=${uuid}`;
+      let ascii = '';
+      try {
+        ascii = await qrcode.toString(qrcodeurl, { type: 'terminal', small: true, margin: 1 });
+      } catch (e) {
+        // ASCII 生成失败不影响主流程
+      }
+      return text({
+        uuid,
+        qrcodeurl,
+        qrcode_image: qr.qrcode || '',
+        instruction: '请用微信扫描二维码并确认授权（须为绑定了酷狗账号的微信），然后调用 kugou_login_concept_check 传入 uuid。',
+        ascii_qrcode: ascii ? '\n' + ascii : '',
+      });
+    }
+  );
+
+  server.registerTool(
+    'kugou_login_concept_check',
+    {
+      title: '查询概念版微信扫码状态并完成登录',
+      description: '轮询概念版微信扫码状态；微信返回 wx_code（用户已授权）时自动换取概念版登录态并保存（独立于标准版会话）。',
+      inputSchema: { uuid: z.string().describe('kugou_login_concept 返回的 uuid') },
+    },
+    async ({ uuid }) => {
+      const body = await callLite('login_wx_check', { uuid });
+      const wxCode = body?.wx_code;
+      const out = { wx_code: Boolean(wxCode), wx_errcode: body?.wx_errcode };
+      if (wxCode) {
+        const login = await callLite('login_openplat', { code: wxCode });
+        out.kugou_login = login?.status === 1 ? '成功' : `异常: ${JSON.stringify(login).slice(0, 150)}`;
+        out.userid = login?.data?.userid;
+      }
+      const st = await liteStatus();
+      out.concept_logged_in = st.logged_in;
+      out.instruction = st.logged_in
+        ? '概念版登录完成：可调用 kugou_sign_in 签到领取 VIP；歌曲直链/下载将自动走概念版通道（可用 kugou_get_song_url 验证 priv_status=1）。'
+        : '尚未授权，请提示用户在微信中确认后再次调用本工具。';
+      return text(out);
+    }
+  );
+
+  server.registerTool(
     'kugou_login_status',
     {
       title: '查询登录状态',
@@ -250,23 +385,43 @@ function registerTools(server) {
     },
     async () => {
       if (!session.isLoggedIn()) {
-        return text({ logged_in: false, hint: '当前未登录。请调用 kugou_login_qr（酷狗 App 扫码）或 kugou_login_wx（微信扫码）发起登录。' });
+        return text({
+          logged_in: false,
+          hint: '当前未登录。请调用 kugou_login_qr（酷狗 App 扫码）或 kugou_login_wx（微信扫码）发起登录；概念版 VIP 签到与下载请另外调用 kugou_login_concept 登录概念版。',
+        });
       }
       const body = await call('user_detail', {}, { requireLogin: true });
       const d = body?.data || body;
-      return text({
+      const out = {
         logged_in: true,
         userid: session.cookie.userid,
-        nickname: d?.nick_name || d?.nick,
+        nickname: d?.nickname || d?.nick_name || d?.nick,
         vip_type: d?.vip_type ?? session.cookie.vip_type,
         // 常见资料字段
         gender: d?.gender,
         birthday: d?.birthday,
         fans: d?.fans,
-        follows: d?.follow,
+        follows: d?.follows ?? d?.follow,
         listen_songs: d?.listen_num ?? d?.play_count,
         raw: d,
-      });
+      };
+      // 概念版登录态与业务 VIP 摘要（概念版 VIP 不体现在账号 vip_type 里）
+      try {
+        const st = await liteStatus();
+        out.concept = { logged_in: st.logged_in, userid: st.userid || undefined };
+        if (st.logged_in) {
+          try {
+            out.concept.vip = conceptVipSummary(await callLite('youth_union_vip', {}));
+          } catch (e) {
+            out.concept.vip_error = String(e.message).slice(0, 150);
+          }
+        } else {
+          out.concept.hint = '概念版未登录：概念版 VIP（kugou_sign_in 可领取）仅概念版通道可享用，请调用 kugou_login_concept 微信扫码登录。';
+        }
+      } catch (e) {
+        out.concept = { error: String(e.message).slice(0, 150) };
+      }
+      return text(out);
     }
   );
 
@@ -274,12 +429,118 @@ function registerTools(server) {
     'kugou_logout',
     {
       title: '退出登录',
-      description: '清除本地保存的登录态（token/userid），保留设备标识。再次使用收藏等能力需重新扫码。',
+      description: '清除本地保存的登录态（含标准版与概念版的 token/userid），保留设备标识。再次使用收藏/VIP下载等能力需重新扫码。',
       inputSchema: {},
     },
     async () => {
       session.logout();
-      return text({ logged_in: false, message: '已退出登录。' });
+      try {
+        await liteLogout();
+      } catch (e) {
+        // 概念版工作进程不可用时忽略，不影响标准版退出
+      }
+      return text({ logged_in: false, concept_logged_in: false, message: '已退出标准版与概念版登录（设备标识保留）。' });
+    }
+  );
+
+  // ----------------------------------------------------------
+  // 概念版 VIP 组（签到 / 状态）
+  // ----------------------------------------------------------
+
+  server.registerTool(
+    'kugou_sign_in',
+    {
+      title: '概念版签到领取VIP',
+      description:
+        '在概念版通道执行每日签到领 VIP：上报看广告任务（每次 +3 小时）→ 领取当日听歌 VIP → 领取升级奖励（当日 VIP 升为 24 小时）。领取的概念版 VIP 仅概念版通道可用（本服务的歌曲直链/下载工具在概念版登录后自动走该通道）。需先 kugou_login_concept 登录。当日已在手机端领取时对应步骤会返回「今日已领取」，不影响其余步骤。',
+      inputSchema: {
+        ad_times: z.number().int().min(0).max(8).optional().describe('看广告任务上报次数，默认 1（每日上限 8 次，每次 +3 小时 VIP）'),
+        claim: z.boolean().optional().describe('是否领取当日 VIP 与升级奖励，默认 true'),
+      },
+    },
+    async (p) => {
+      const st = await liteStatus();
+      if (!st.logged_in) throw new Error('概念版未登录：请先调用 kugou_login_concept 生成微信二维码并扫码登录。');
+      const out = { ad_reports: [], claim: null, upgrade: null };
+
+      // 1. 看广告任务上报（每次 +3h VIP，全部完成后自动跳过）
+      const adTimes = p.ad_times ?? 1;
+      for (let i = 0; i < adTimes; i++) {
+        try {
+          const r = await callLite('youth_vip', {});
+          const d = r?.data || r;
+          out.ad_reports.push(d);
+          if (d && Number(d.total) && Number(d.done) >= Number(d.total)) {
+            out.ad_task_all_done = true;
+            break;
+          }
+        } catch (e) {
+          out.ad_reports.push({ error: String(e.message).slice(0, 150) });
+          break;
+        }
+      }
+
+      // 2/3. 领取当日 VIP 与升级奖励（按北京时间自然日）
+      if (p.claim !== false) {
+        const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+        try {
+          const r = await callLite('youth_day_vip', { receive_day: today });
+          out.claim = { success: true, day: today, response: r?.data || r };
+        } catch (e) {
+          out.claim = {
+            success: false,
+            day: today,
+            error_code: e.code,
+            message: e.code === 131001 ? '今日已领取过 VIP（可能已在手机端领取）' : String(e.message).slice(0, 150),
+          };
+        }
+        try {
+          const r = await callLite('youth_day_vip_upgrade', {});
+          out.upgrade = { success: true, response: r?.data || r };
+        } catch (e) {
+          out.upgrade = {
+            success: false,
+            error_code: e.code,
+            message: e.code === 297002 ? '今日已领取过升级奖励' : String(e.message).slice(0, 150),
+          };
+        }
+      }
+
+      // 4. 领取后最新 VIP 概况
+      try {
+        out.vip = conceptVipSummary(await callLite('youth_union_vip', {}));
+      } catch (e) {
+        out.vip = { error: String(e.message).slice(0, 150) };
+      }
+      return text(out);
+    }
+  );
+
+  server.registerTool(
+    'kugou_vip_status',
+    {
+      title: '查询概念版VIP状态',
+      description: '查询概念版业务 VIP（svip/tvip 等）有效期、每日下载额度、今日是否已领取及近 7 天领取记录。概念版 VIP 由签到/听歌任务获得，不体现在账号 vip_type 中，仅概念版通道可用。需概念版登录。',
+      inputSchema: {},
+    },
+    async () => {
+      const st = await liteStatus();
+      const out = { concept_logged_in: st.logged_in, userid: st.userid || undefined };
+      if (!st.logged_in) {
+        out.hint = '概念版未登录，请先调用 kugou_login_concept 扫码登录。';
+        return text(out);
+      }
+      out.vip = conceptVipSummary(await callLite('youth_union_vip', {}));
+      try {
+        const rec = await callLite('youth_month_vip_record', {});
+        const list = rec?.data?.list || [];
+        out.recent_records = list.slice(0, 7).map((r) => ({ day: r.day, received: Number(r.receive_vip) === 1, vip_type: r.vip_type }));
+        const today = new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
+        out.today_claimed = list.some((r) => r.day === today && Number(r.receive_vip) === 1);
+      } catch (e) {
+        out.recent_records_error = String(e.message).slice(0, 150);
+      }
+      return text(out);
     }
   );
 
@@ -378,7 +639,7 @@ function registerTools(server) {
     'kugou_get_song_url',
     {
       title: '获取歌曲播放/下载直链',
-      description: '传入歌曲 hash（来自 kugou_search）获取多音质直链。VIP 歌曲未登录或无会员时仅返回试听段（url 中 IsFreePart）。可指定 quality 期望音质（128/320/flac/high/viper_tape 等），返回按音质排列的可用直链列表。',
+      description: '传入歌曲 hash（来自 kugou_search）获取直链。概念版已登录时自动走概念版通道（概念版 VIP 生效，可下载 VIP 歌曲，返回 identity=concept 与 priv_status=1）；否则走标准版通道，VIP 歌曲仅返回试听段或无直链。可指定 quality 期望音质（128/320/flac/high/viper_tape 等）。',
       inputSchema: {
         hash: z.string().describe('歌曲 hash（FileHash，大小写不敏感）'),
         album_id: z.number().optional().describe('专辑 id（提高命中率）'),
@@ -388,37 +649,25 @@ function registerTools(server) {
       },
     },
     async (p) => {
-      let body;
-      try {
-        body = await call('song_url', p);
-      } catch (e) {
-        // song_url 走 trackercdn，风控/失败时回退新版 priv_url 通道
-        body = await call('song_url_new', { hash: p.hash, album_audio_id: p.album_audio_id, free_part: p.free_part });
-      }
-      const urls = (body?.urls || []).map((u) => ({
-        quality: u.quality || String(u.bitrate || ''),
-        bitrate: u.bitrate,
-        size: u.filesize || u.size,
-        ext: u.ext || (u.url ? String(u.url).split('.').pop().split('?')[0] : ''),
-        url: u.url,
-        backup_urls: u.back_url ? [u.back_url] : u.backupUrls || [],
-        free_trial_start: u.start_ms,
-        free_trial_end: u.end_ms,
-      }));
+      const { body, identity } = await fetchSongUrl(p);
+      const urls = normalizeSongUrls(body, p.quality);
       // 排序：目标音质优先，其余按音质从高到低
       const targetQ = String(p.quality || '128').replace('magic_', '');
       urls.sort((a, b) => qualityIndex(b.quality) - qualityIndex(a.quality));
       urls.sort((a, b) => (b.quality === targetQ ? 1 : 0) - (a.quality === targetQ ? 1 : 0));
+      const urlCount = urls.filter((u) => u.url).length;
       const out = {
         hash: p.hash,
+        identity, // concept=概念版通道（概念版VIP生效）/ standard=标准版
         status: body?.status,
-        url_count: urls.filter((u) => u.url).length,
+        priv_status: body?.priv_status, // 1 = 服务端已确认下载权限
+        url_count: urlCount,
         urls,
         vip_hint:
-          body?.status === 2 || urls.filter((u) => u.url).length === 0
-            ? '未获取到可用直链：可能触发了风控（稍后重试）、或该曲为 VIP 歌曲（登录会员账号后重试）'
+          body?.status === 2 || urlCount === 0
+            ? '未获取到可用直链：可能触发了风控（稍后重试）、或该曲为 VIP 歌曲且当前通道无会员权限。可调用 kugou_sign_in 签到领取概念版 VIP（需先 kugou_login_concept 登录概念版）。'
             : undefined,
-        free_trial_hint: body?.is_free_part === 1 || urls.some((u) => u.free_trial_end) ? '当前返回的是试听片段（通常 60 秒内）' : undefined,
+        free_trial_hint: body?.is_free_part === 1 || Boolean(body?.hash_offset) && body?.status === 2 ? '当前返回的是试听片段（通常 60 秒内）' : undefined,
       };
       return text(out);
     }
@@ -855,14 +1104,9 @@ function registerTools(server) {
       },
     },
     async (p) => {
-      let urlBody;
-      try {
-        urlBody = await call('song_url', p);
-      } catch (e) {
-        urlBody = await call('song_url_new', { hash: p.hash, album_audio_id: p.album_audio_id });
-      }
-      const urls = (urlBody?.urls || []).filter((u) => u.url);
-      if (!urls.length) throw new Error('未获取到可用直链（风控或需要 VIP 权限），可稍后重试或先登录会员账号。');
+      const { body: urlBody, identity } = await fetchSongUrl(p);
+      const urls = normalizeSongUrls(urlBody, p.quality).filter((u) => u.url);
+      if (!urls.length) throw new Error('未获取到可用直链（风控或需要 VIP 权限）：可调用 kugou_sign_in 签到领取概念版 VIP 后重试（需先 kugou_login_concept 登录概念版）。');
       const targetQ = String(p.quality || '128').replace('magic_', '');
       urls.sort((a, b) => qualityIndex(String(b.quality || b.bitrate)) - qualityIndex(String(a.quality || a.bitrate)));
       urls.sort((a, b) => (String(b.quality || b.bitrate) === targetQ ? 1 : 0) - (String(a.quality || a.bitrate) === targetQ ? 1 : 0));
@@ -885,7 +1129,8 @@ function registerTools(server) {
         size_bytes: size,
         size_mb: (size / 1024 / 1024).toFixed(2),
         quality: chosen.quality || chosen.bitrate,
-        is_free_trial: chosen.is_free_part === 1 || Boolean(chosen.end_ms),
+        identity,
+        is_free_trial: urlBody?.is_free_part === 1 || (Boolean(urlBody?.hash_offset) && urlBody?.status === 2),
       });
     }
   );

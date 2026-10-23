@@ -33,6 +33,10 @@ bin/*
 .admin_devices.json
 .kugou_guid
 .mcp_session.json
+.mcp_session_lite.json
+.mcp_session_lite.json.*
+session-backup-*.json
+scratch/
 
 # ==============================
 # 运行时目录 (服务器上自动生成)

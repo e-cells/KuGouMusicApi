@@ -1,6 +1,6 @@
 # KuGouMusicApi MCP 服务
 
-面向大模型 Agent 的酷狗音乐工具服务（[Model Context Protocol](https://modelcontextprotocol.io)）。基于本项目编程式 API 进程内调用，提供登录、搜索、播放/下载直链、歌词、歌单与收藏管理、MV、歌手/专辑、本地下载等 31 个工具，用于构建智能音乐助手。
+面向大模型 Agent 的酷狗音乐工具服务（[Model Context Protocol](https://modelcontextprotocol.io)）。基于本项目编程式 API 进程内调用，提供登录（标准版 + 概念版）、概念版 VIP 签到、搜索、播放/下载直链、歌词、歌单与收藏管理、MV、歌手/专辑、本地下载等 35 个工具，用于构建智能音乐助手。
 
 ## 快速开始
 
@@ -78,12 +78,39 @@ node mcp/server.js --http 3010
 | `kugou_login_qr` | 生成酷狗 App 扫码二维码（返回终端 ASCII 二维码 + base64 图片） |
 | `kugou_login_qr_check` | 轮询扫码状态（1 待扫码 / 2 待确认 / 4 成功，成功自动保存会话） |
 | `kugou_login_wx` / `kugou_login_wx_check` | 微信扫码登录（依赖内置微信开放平台凭证，失败时改用 App 扫码） |
-| `kugou_login_status` | 查询登录态与用户资料 |
-| `kugou_logout` | 退出登录（保留设备指纹） |
+| `kugou_login_concept` / `kugou_login_concept_check` | **概念版**微信扫码登录（概念版 VIP 下载与签到的必要登录，见下文「概念版 VIP」） |
+| `kugou_login_status` | 查询登录态与用户资料（含概念版 VIP 概况） |
+| `kugou_logout` | 退出登录（同时清除标准版与概念版登录态，保留设备指纹） |
 
 推荐流程：`kugou_login_qr` → 把 ASCII 二维码展示给用户 → 循环 `kugou_login_qr_check`（建议间隔 2-3 秒）→ status=4 即登录成功。
 
+## 概念版 VIP（重要）
+
+酷狗概念版（青春版）的「听歌/看广告领 VIP」是**业务线隔离**的会员：
+
+- 只对**概念版身份**（appid=3116 + 概念版 token）的请求生效；标准版登录（含同一账号）拿不到其下载权限，服务端以 `is_vip=0` 拒绝。
+- 概念版 token 与标准版 token **互不兼容**（标准版 token 走概念版请求会报 `20018 token api error`），因此 MCP 单独维护一套概念版会话（`data/.mcp_session_lite.json`），由内部以 `platform=lite` 运行的工作进程承载。
+- 账号级 `vip_type` 不体现概念版 VIP，须看 `busi_type="concept"` 的业务 VIP 条目（svip 即音乐会员，附每日 500 首下载额度）。
+
+因此要使用概念版 VIP 下载歌曲，只需：
+
+```
+kugou_login_concept → 用户微信扫码 → kugou_login_concept_check(uuid) 至 concept_logged_in=true
+→ 之后 kugou_sign_in 每日签到领 VIP
+→ kugou_get_song_url / kugou_download_song 自动走概念版通道（返回 identity="concept"、priv_status=1）
+```
+
+签到机制（`kugou_sign_in`）：
+
+- 看广告任务：每日上限 8 次，每次 +3 小时 VIP（`ad_times` 参数控制，默认 1）；
+- 领取当日听歌 VIP（北京时间自然日；`131001` = 今日已领取，常见于用户已在手机端领取）；
+- 领取升级奖励（当日 VIP 升为 24 小时；`297002` = 今日已领取过）。
+
 ## 工具总览
+
+### 概念版 VIP
+- `kugou_sign_in` — 签到领取概念版 VIP（看广告任务 + 领取当日 VIP + 升级奖励），需概念版登录
+- `kugou_vip_status` — 概念版 VIP 有效期、每日下载额度、今日是否已领取、近 7 天领取记录
 
 ### 搜索
 - `kugou_search` — 统一搜索：song（默认）/ mv / album / artist / lyric
@@ -91,7 +118,7 @@ node mcp/server.js --http 3010
 - `kugou_search_suggest` — 关键词联想
 
 ### 歌曲播放与信息
-- `kugou_get_song_url` — 多音质播放/下载直链（128/320/flac/high/蝰蛇音质；VIP 曲目需登录会员）
+- `kugou_get_song_url` — 多音质播放/下载直链（128/320/flac/high/蝰蛇音质）。概念版登录后自动走概念版通道（概念版 VIP 生效，`identity="concept"`），否则走标准版通道
 - `kugou_get_song_info` — 各音质可用性、大小与所需会员类型
 - `kugou_get_lyric` — 一步获取带时间轴歌词（LRC）或逐字歌词（KRC）
 
@@ -135,11 +162,18 @@ Agent: kugou_login_status() → 未登录 → kugou_login_qr() 展示二维码
 
 用户：取消收藏
 Agent: kugou_unfavorite_song(hash=...)
+
+用户：帮我签到领个 VIP，然后把这首会员歌下载成无损
+Agent: kugou_vip_status() → concept_logged_in=false
+     → kugou_login_concept() 展示微信二维码 → kugou_login_concept_check(uuid) 轮询至 concept_logged_in=true
+     → kugou_sign_in()（ad_times=1，领取当日 VIP + 升级奖励）
+     → kugou_get_song_url(hash=..., quality="flac") 确认 identity="concept"、priv_status=1
+     → kugou_download_song(hash=..., name=..., quality="flac")
 ```
 
 ## 注意事项
 
 1. **风控**：同一 IP 高频调用 `song_url` 等播放链路接口可能触发酷狗风控（返回"本次请求需要验证"）。MCP 已内置稳定设备指纹降低触发率；触发后等待几分钟重试即可。
-2. **VIP 歌曲**：未登录或非会员获取 VIP 歌曲时只能拿到试听片段（约 60 秒），工具返回中会明确标注。
+2. **VIP 歌曲**：未登录或非会员获取 VIP 歌曲时只能拿到试听片段（约 60 秒），工具返回中会明确标注。概念版 VIP 用户须登录概念版（`kugou_login_concept`）后由概念版通道下载——标准版登录同一账号也无法使用概念版 VIP 权限（业务线隔离，详见上文「概念版 VIP」）。
 3. **微信登录**：依赖项目内置的微信开放平台 appid/secret，若微信侧凭证失效会报错，此时改用酷狗 App 扫码（`kugou_login_qr`）。
 4. **已知上游问题**：`/search/complex` 与 `/search/mixed` 两个聚合搜索接口在酷狗服务端已失效（上游仓库同样失效），MCP 的 `kugou_search` 通过按类型分别搜索规避了该问题。

@@ -22,15 +22,22 @@ const DATA_DIR = path.join(__dirname, '..', 'data');
 const SESSION_FILE = path.join(DATA_DIR, '.mcp_session.json');
 
 class McpSession {
-  constructor() {
+  /**
+   * @param {Object} [options]
+   * @param {string} [options.file] 会话文件路径；缺省为主（标准版）会话。
+   *   概念版（lite）登录态与标准版 token 互不兼容，由 mcp/lite-worker.js
+   *   用独立文件（.mcp_session_lite.json）实例化。
+   */
+  constructor({ file } = {}) {
+    this.file = file || SESSION_FILE;
     this.cookie = {};
     this.load();
   }
 
   load() {
     try {
-      if (fs.existsSync(SESSION_FILE)) {
-        const saved = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+      if (fs.existsSync(this.file)) {
+        const saved = JSON.parse(fs.readFileSync(this.file, 'utf8'));
         if (saved && typeof saved.cookie === 'object') this.cookie = saved.cookie;
       }
     } catch (e) {
@@ -42,7 +49,7 @@ class McpSession {
   save() {
     try {
       if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(SESSION_FILE, JSON.stringify({ cookie: this.cookie, saved_at: new Date().toISOString() }, null, 2), 'utf8');
+      fs.writeFileSync(this.file, JSON.stringify({ cookie: this.cookie, saved_at: new Date().toISOString() }, null, 2), 'utf8');
     } catch (e) {
       // 持久化失败不影响当次会话
     }
