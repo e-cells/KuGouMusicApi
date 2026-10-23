@@ -1,4 +1,4 @@
-const { apiver, appid, wx_appid, wx_lite_appid, wx_secret, wx_lite_secret, srcappid, clientver, liteAppid, liteClientver } = require('./config.json');
+const { apiver, appid, wx_appid, wx_lite_appid, wx_secret, wx_lite_secret, srcappid, clientver, liteAppid, liteClientver, qq_appid, qq_lite_appid } = require('./config.json');
 const {
   cryptoAesDecrypt,
   cryptoAesEncrypt,
@@ -11,9 +11,10 @@ const {
   publicLiteRasKey,
   publicRasKey,
 } = require('./crypto');
-const { createRequest } = require('./request');
+const { createRequest, createCloudRequest } = require('./request');
+const { resolveProxy } = require('./runtime');
 const { signKey, signParams, signParamsKey, signCloudKey, signatureAndroidParams, signatureRegisterParams, signatureWebParams } = require('./helper');
-const { randomString, decodeLyrics, parseCookieString, cookieToJson, randomNumber, calculateMid } = require('./util');
+const { randomString, decodeLyrics, parseCookieString, cookieToJson, randomNumber, calculateMid, isUUIDv4 } = require('./util');
 
 // 判断是否为概念版
 const isLite = process.env.platform === 'lite';
@@ -29,6 +30,8 @@ module.exports = {
   wx_lite_appid,
   wx_secret,
   wx_lite_secret,
+  qq_appid,
+  qq_lite_appid,
   srcappid,
   clientver: useClientver,
   isLite,
@@ -41,6 +44,8 @@ module.exports = {
   playlistAesEncrypt,
   playlistAesDecrypt,
   createRequest,
+  createCloudRequest,
+  resolveProxy,
   signKey,
   signParams,
   signParamsKey,
@@ -55,5 +60,6 @@ module.exports = {
   publicLiteRasKey,
   publicRasKey,
   randomNumber,
-  calculateMid
+  calculateMid,
+  isUUIDv4
 };

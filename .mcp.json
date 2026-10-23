@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "kugou-music": {
+      "command": "node",
+      "args": ["mcp/server.js"],
+      "cwd": "."
+    }
+  }
+}

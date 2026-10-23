@@ -10,7 +10,7 @@ module.exports = (params, useAxios) => {
     hash: params?.hash || '',
     keyword: params?.keywords || '',
     lrctxt: 1,
-    man: params.man ?? 'no',
+    man: params.man ?? 'yes',
   };
 
   return useAxios({
@@ -21,6 +21,5 @@ module.exports = (params, useAxios) => {
     cookie: params?.cookie || {},
     encryptType: 'android',
     clearDefaultParams: true,
-    notSign: true,
   });
 };

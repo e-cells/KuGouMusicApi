@@ -117,7 +117,16 @@ module.exports = (params, useAxios) => {
       responseType: 'arraybuffer',
     })
       .then((res) => {
-        res.body = playlistAesDecrypt({ str: res.body.toString('base64'), key: aesEncrypt.key });
+        // 服务端返回非加密数据（如风控/限流提示）时解密会失败，回退按明文 JSON 解析
+        try {
+          res.body = playlistAesDecrypt({ str: res.body.toString('base64'), key: aesEncrypt.key });
+        } catch (e) {
+          try {
+            res.body = JSON.parse(res.body.toString());
+          } catch (e2) {
+            res.body = { status: 0, error: '响应解密失败', raw: res.body.toString().slice(0, 200) };
+          }
+        }
 
         const { body } = res;
         if (body?.status === 1 && body?.data) {

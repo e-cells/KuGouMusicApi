@@ -32,6 +32,16 @@ bin/*
 .admin_config.json
 .admin_devices.json
 .kugou_guid
+.mcp_session.json
+
+# ==============================
+# 运行时目录 (服务器上自动生成)
+# ==============================
+data/
+downloads/
+
+# Claude Code 本机配置
+.claude/settings.local.json
 
 # ==============================
 # 备份文件 (避免提交测试垃圾)

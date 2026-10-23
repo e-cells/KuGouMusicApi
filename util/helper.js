@@ -5,15 +5,16 @@ const { appid: useAppid, liteAppid, clientver: useClientver, liteClientver } = r
 /**
  * web版本 signature 加密
  * @param {HelperParams} params
+ * @param {string?} data 可选的请求体字符串；H5 的 kGRequest 对 POST 请求会把 JSON 请求体拼进签名
  * @returns {string} 加密后的signature
  */
-const signatureWebParams = (params) => {
+const signatureWebParams = (params, data) => {
   const str = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
   const paramsString = Object.keys(params)
     .map((key) => `${key}=${params[key]}`)
     .sort()
     .join('');
-  return cryptoMd5(`${str}${paramsString}${str}`);
+  return cryptoMd5(`${str}${paramsString}${data || ''}${str}`);
 };
 
 /**
