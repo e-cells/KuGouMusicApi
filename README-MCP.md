@@ -26,7 +26,7 @@ node mcp/server.js --http 3010
   "mcpServers": {
     "kugou-music": {
       "command": "node",
-      "args": ["E:/05-Claude Code/09-KuGouMusicApi/mcp/server.js"]
+      "args": ["/path/to/KuGouMusicApi/mcp/server.js"]
     }
   }
 }
@@ -39,7 +39,7 @@ node mcp/server.js --http 3010
   "mcpServers": {
     "kugou-music": {
       "command": "node",
-      "args": ["E:/05-Claude Code/09-KuGouMusicApi/mcp/server.js"]
+      "args": ["/path/to/KuGouMusicApi/mcp/server.js"]
     }
   }
 }

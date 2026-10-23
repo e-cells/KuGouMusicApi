@@ -51,6 +51,7 @@
 * 🚦 **接口限流与防雪崩 (防封杀)**：集成 `express-rate-limit` 中间件，提供登录接口独立限流防护（防密码暴力破解）与全局防刷机制（防封服务器出口 IP）。
 * ⚡ **弱网熔断假死保护**：Axios 网络层强制加入 10 秒超时熔断机制，防止弱网环境导致 Node.js 异步连接堆积与进程死锁。
 * 🧹 **自愈与防内存泄漏**：后台定时清洁工自动清理长久未活跃的普通访客记录（白名单设备自动豁免）和过期凭证，结合本地硬盘 `.admin_devices.json` 持久化记忆，保障服务长年累月跑在 Docker/云服务器中也稳如泰山。
+* 🤖 **MCP 智能体服务**：内置 [Model Context Protocol](https://modelcontextprotocol.io) 服务（31 个工具），支持 Claude Code / Claude Desktop 等 AI Agent 直接搜索、下载、播放、收藏歌曲与管理歌单，扫码登录态自动持久化，详见下方「MCP 服务」章节。
 
 ---
 
@@ -120,6 +121,68 @@ $ $Env:HOST=127.0.0.1; npm run dev
 访客指纹消除技术：系统内嵌“智能特征指纹算法”，自动合并未登录用户在轮询扫码或拉取公开列表时产生的随机垃圾设备记录。一台设备未登录前无论发起多少次请求，在控制台列表中只会显示唯一一条“访客在线”记录。
 
 退出登录：系统支持标准的 Session 管理，点击右上角“退出登录”按钮可立即销毁本地管理员凭证，防止账号在公共网络或车机端暴露。
+
+## 🤖 MCP 服务（AI Agent 接入）
+
+内置 [Model Context Protocol](https://modelcontextprotocol.io) 服务，让 Claude Code、Claude Desktop、Cursor 等 AI Agent 直接调用酷狗音乐能力：搜索、播放/下载直链、歌词、歌单与收藏管理、MV、歌手/专辑、每日推荐等 31 个工具。
+
+### 快速启动
+
+```bash
+# stdio 模式（本地 Agent 接入）
+npm run mcp
+
+# HTTP 模式（远程 Agent 接入，端口 3010）
+npm run mcp:http
+```
+
+会话（设备指纹 + 登录态）自动持久化到 `data/.mcp_session.json`，服务重启后无需重新扫码登录。
+
+### Agent 接入配置
+
+Claude Code（项目根目录 `.mcp.json`）或 Claude Desktop（`claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "kugou-music": {
+      "command": "node",
+      "args": ["/path/to/KuGouMusicApi/mcp/server.js"]
+    }
+  }
+}
+```
+
+HTTP 模式接入端点：`http://localhost:3010/mcp`（POST，Streamable HTTP）。
+
+### 扫码登录流程
+
+`kugou_login_qr` 生成二维码（终端 ASCII + base64 图片）→ 每隔 2-3 秒调用 `kugou_login_qr_check` 轮询（status=4 即成功，自动保存会话）→ `kugou_login_status` 随时查询登录态与用户资料。也支持微信扫码（`kugou_login_wx`）。
+
+### 工具总览
+
+| 类别 | 工具 |
+|---|---|
+| 搜索 | `kugou_search`（song/mv/album/artist/lyric）、`kugou_search_hot` 热搜、`kugou_search_suggest` 联想 |
+| 播放/信息 | `kugou_get_song_url` 多音质直链（128/320/flac/蝰蛇）、`kugou_get_song_info`、`kugou_get_lyric`（LRC/逐字 KRC） |
+| 歌单/收藏（需登录） | `kugou_get_user_playlists`、`kugou_get_playlist_tracks`、`kugou_favorite_song` / `kugou_unfavorite_song`、`kugou_playlist_add_songs` / `kugou_playlist_remove_songs`、`kugou_create_playlist` / `kugou_delete_playlist` |
+| MV | `kugou_get_mv_url`、`kugou_collect_mv` / `kugou_uncollect_mv` |
+| 歌手/专辑 | `kugou_get_artist_info`、`kugou_follow_artist` / `kugou_unfollow_artist`、`kugou_get_album_info` |
+| 本地下载 | `kugou_download_song`（默认存 `./downloads`，可指定音质）、`kugou_download_lyric`（存 `.lrc`） |
+| 推荐（需登录） | `kugou_get_recommend_songs` 每日推荐、`kugou_get_personal_fm` 私人 FM |
+
+### 示例对话流
+
+```
+用户：帮我搜一下海阔天空，下载 128k 的，歌词也存下来
+Agent: kugou_search(keywords="海阔天空") → 取第一首 hash
+     → kugou_download_song(quality="128") → kugou_download_lyric
+
+用户：把这首歌收藏了
+Agent: kugou_login_status() → 未登录则 kugou_login_qr() 扫码 → kugou_favorite_song(...)
+```
+
+完整工具说明、参数细节与风控注意事项见 [README-MCP.md](README-MCP.md)。
 
 Docker 容器化长效运行部署
 如果您使用 docker-compose 进行常年累月的挂载运行，建议直接在 docker-compose.yml 中使用 Docker 原生日志轮转规则。无需修改代码，即可将容器日志大小死锁在 10M 以内，彻底根绝硬盘空间泄漏。
