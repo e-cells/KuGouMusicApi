@@ -153,6 +153,14 @@ async function consturctServer(moduleDefs) {
 
   // 挂载拦截器 (必须在缓存和实际 API 路由前执行)
   app.use(adminMiddleware);
+
+  // ==========================================
+  // 【新增功能】MCP 端点（与 API 同进程在线提供，Streamable HTTP）
+  // 部署一份即同时提供 HTTP API 与 MCP 服务，AI 客户端直连 /mcp
+  // ==========================================
+  const { handleMcpRequest, mcpGetHandler } = require('./mcp/server');
+  app.post('/mcp', handleMcpRequest);
+  app.get('/mcp', mcpGetHandler);
   // ==========================================
   app.use(cache('2 minutes', (req, res) => {
     const noCachePaths = [

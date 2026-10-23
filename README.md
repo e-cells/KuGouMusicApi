@@ -128,11 +128,15 @@ $ $Env:HOST=127.0.0.1; npm run dev
 
 ### 快速启动
 
+MCP 与 API 服务同进程提供（推荐）：按上方 Docker/服务器方式部署后，MCP 端点即为 `http://<服务地址>:<端口>/mcp`，无需额外端口或进程。
+
+本地独立运行（可选）：
+
 ```bash
 # stdio 模式（本地 Agent 接入）
 npm run mcp
 
-# HTTP 模式（远程 Agent 接入，端口 3010）
+# HTTP 模式（独立端口 3010）
 npm run mcp:http
 ```
 
@@ -140,7 +144,15 @@ npm run mcp:http
 
 ### Agent 接入配置
 
-Claude Code（项目根目录 `.mcp.json`）或 Claude Desktop（`claude_desktop_config.json`）：
+**方式一：连接在线服务（推荐）**——在任意机器的 Claude Code 中：
+
+```bash
+claude mcp add --transport http kugou-music http://<服务地址>:8542/mcp
+```
+
+其他支持远程 MCP 的客户端（Cherry Studio、ChatWise 等）填入端点 `http://<服务地址>:8542/mcp`（POST，Streamable HTTP）即可。
+
+**方式二：本地 stdio**——Claude Code（项目根目录 `.mcp.json`）或 Claude Desktop（`claude_desktop_config.json`）：
 
 ```json
 {
@@ -152,8 +164,6 @@ Claude Code（项目根目录 `.mcp.json`）或 Claude Desktop（`claude_desktop
   }
 }
 ```
-
-HTTP 模式接入端点：`http://localhost:3010/mcp`（POST，Streamable HTTP）。
 
 ### 扫码登录流程
 

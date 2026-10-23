@@ -4,6 +4,22 @@
 
 ## 快速开始
 
+**推荐：随 API 服务在线提供（同进程）**
+
+正常启动 API 服务（`node app.js` 或 Docker 部署）即自动挂载 MCP 端点：
+
+```
+MCP endpoint: http://<服务地址>:<端口>/mcp  （POST，Streamable HTTP）
+```
+
+AI 客户端接入（以 Claude Code 为例）：
+
+```bash
+claude mcp add --transport http kugou-music http://<服务地址>:8542/mcp
+```
+
+备选：本地独立运行
+
 ```bash
 # 安装依赖（Node 18+）
 npm install
@@ -11,7 +27,7 @@ npm install
 # 启动（stdio 模式，供本地 Agent 接入）
 node mcp/server.js
 
-# 或 HTTP 模式（供远程 Agent 接入）
+# 或独立 HTTP 模式（供远程 Agent 接入）
 node mcp/server.js --http 3010
 ```
 
@@ -45,9 +61,12 @@ node mcp/server.js --http 3010
 }
 ```
 
-### 通用 MCP Client（HTTP 模式）
+### 通用 MCP Client（远程 HTTP）
+
+API 服务在线部署时端点与服务同址（推荐）；本地独立 HTTP 模式则监听 3010：
 
 ```bash
+# 独立模式（备选）
 node mcp/server.js --http 3010
 # MCP endpoint: http://localhost:3010/mcp  （POST，Streamable HTTP）
 ```

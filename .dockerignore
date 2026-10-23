@@ -4,6 +4,7 @@
 !/public
 !/static
 !/util
+!/mcp
 !/app.js
 !/server.js
 !/package.json
