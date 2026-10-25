@@ -89,12 +89,25 @@ const trimSearchMv = (m) => ({
   publish: m.PublishDate,
 });
 
-/** 从歌单歌曲列表裁剪要点（兼容 v3 端点字段名） */
+/**
+ * 从 playlist_track_all_new 响应中提取歌曲数组
+ * /v4/get_list_all_file_v3 歌曲在 data.info（旧端点为 data.lists），空歌单时 info 为 null
+ */
+const playlistTrackLists = (body) => {
+  const data = body?.data || body;
+  return data?.info || data?.lists || data?.list || [];
+};
+
+/** 从歌单歌曲列表裁剪要点（兼容 v3 新旧端点字段名） */
 const trimPlaylistSong = (s) => {
   const item = {
     fileid: s.fileid ?? s.FileID ?? s.id,
-    name: s.filename || s.name || s.FileName || s.audio_name,
-    singer: s.singername || s.SingerName || (Array.isArray(s.singers) ? s.singers.map((x) => x.name).join('/') : undefined),
+    name: String(s.filename || s.name || s.FileName || s.audio_name || '').replace(/\.(mp3|flac|ape|m4a|ogg|wav)$/i, ''),
+    singer:
+      s.singername ||
+      s.SingerName ||
+      (Array.isArray(s.singerinfo) ? s.singerinfo.map((x) => x.name).join('/') : undefined) ||
+      (Array.isArray(s.singers) ? s.singers.map((x) => x.name).join('/') : undefined),
     hash: s.hash || s.FileHash,
     album_id: s.album_id || s.AlbumID,
     mixsongid: s.mixsongid ?? s.songid ?? s.SongID,
@@ -103,13 +116,38 @@ const trimPlaylistSong = (s) => {
   return Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined));
 };
 
+/**
+ * 从 user_playlist 响应中提取歌单数组
+ * /v7/get_all_list 响应已改版：歌单在 data.info（旧版为 data.lists），字段同步变化
+ * （listid 仍在，默认收藏夹标记 special_flag → is_def：2=我喜欢 / 1=旧版默认收藏）
+ */
+const playlistLists = (body) => body?.data?.info || body?.data?.lists || body?.lists || [];
+
+/** 分页拉取歌单全部歌曲（v3 单页上限 300），供按 hash/mixsongid 定位 fileid 的工具使用 */
+const fetchAllPlaylistTracks = async (listid) => {
+  let tracks = [];
+  let page = 1;
+  let total = Infinity;
+  while (tracks.length < total) {
+    const body = await call('playlist_track_all_new', { listid, page, pagesize: 300 }, { requireLogin: true });
+    const batch = playlistTrackLists(body);
+    if (!batch.length) break;
+    tracks = tracks.concat(batch);
+    const data = body?.data || body;
+    total = Number(data?.count ?? data?.total ?? tracks.length) || tracks.length;
+    page++;
+  }
+  return tracks;
+};
+
 /** 从歌单列表裁剪要点 */
 const trimPlaylist = (l) => ({
-  listid: l.listid,
+  listid: l.listid ?? l.list_create_listid,
   name: l.name,
   count: l.count,
   type: l.type, // 0 自建 / 1 收藏
-  special_flag: l.special_flag, // 1 为默认收藏夹（我喜欢的单曲）
+  is_def: l.is_def, // 2 新版默认收藏夹“我喜欢” / 1 旧版“默认收藏”
+  special_flag: l.special_flag ?? (l.is_def ? 1 : undefined), // 默认收藏夹标记（兼容旧字段语义）
   pic: l.pic ? String(l.pic).replace('{size}', '240') : undefined,
   create_time: l.create_time,
 });
@@ -117,7 +155,9 @@ const trimPlaylist = (l) => ({
 /** 在用户歌单中定位默认收藏夹 */
 const findFavoriteList = (lists = []) => {
   return (
+    lists.find((l) => Number(l.is_def) === 2) || // “我喜欢”（新版默认收藏夹）
     lists.find((l) => Number(l.special_flag) === 1) ||
+    lists.find((l) => Number(l.is_def) === 1) || // 旧版“默认收藏”
     lists.find((l) => /我喜欢|默认收藏|我收藏/.test(String(l.name || '')) && Number(l.type) === 0) ||
     null
   );
@@ -737,18 +777,33 @@ function registerTools(server) {
     'kugou_get_user_playlists',
     {
       title: '获取我的歌单',
-      description: '列出当前用户全部歌单（含默认收藏夹“我喜欢的单曲”，special_flag=1）。需登录。',
+      description: '列出当前用户全部歌单（自动翻页取全量，含自建与收藏；默认收藏夹“我喜欢”标 is_def=2）。需登录。',
       inputSchema: {
-        page: z.number().int().optional(),
-        pagesize: z.number().int().optional().describe('默认 30'),
+        pagesize: z.number().int().optional().describe('单页请求数量，默认 100（工具自动翻页取完）'),
       },
     },
     async (p) => {
-      const body = await call('user_playlist', { page: p.page, pagesize: p.pagesize }, { requireLogin: true });
-      const lists = body?.data?.lists || body?.lists || [];
+      const pagesize = p.pagesize || 100;
+      let page = 1;
+      let lists = [];
+      let counts = {};
+      // 自动翻页：单页返回不足 pagesize 或已达 list_count 总数时停止
+      for (;;) {
+        const body = await call('user_playlist', { page, pagesize }, { requireLogin: true });
+        const batch = playlistLists(body);
+        lists = lists.concat(batch);
+        counts = {
+          total: body?.data?.list_count ?? lists.length, // list_count 为歌单总数（新版响应无 data.total）
+          collected: body?.data?.collect_count,
+        };
+        if (!batch.length || batch.length < pagesize || lists.length >= counts.total) break;
+        page++;
+      }
       const fav = findFavoriteList(lists);
       return text({
-        total: body?.data?.total ?? lists.length,
+        total: counts.total ?? lists.length,
+        created_count: lists.filter((l) => Number(l.type) === 0).length,
+        collected_count: counts.collected ?? lists.filter((l) => Number(l.type) === 1).length,
         favorite_list: fav ? trimPlaylist(fav) : null,
         playlists: lists.map(trimPlaylist),
         hint: '收藏/取消收藏歌曲无需手动指定 listid（工具会自动使用 favorite_list）；歌单增删歌曲用各工具传 listid。',
@@ -760,25 +815,38 @@ function registerTools(server) {
     'kugou_get_playlist_tracks',
     {
       title: '获取歌单内歌曲',
-      description: '获取指定歌单的全部歌曲（含 fileid——取消收藏/删歌必需）。默认收藏夹可用 listid=favorite 简写。需登录。',
+      description: '分页获取歌单内歌曲（含 fileid——取消收藏/删歌必需）。默认返回第 1 页 300 首，歌单较大时传 page 翻页。默认收藏夹可用 listid=favorite 简写。需登录。',
       inputSchema: {
         listid: z.string().describe('歌单 listid，或 "favorite" 表示默认收藏夹'),
-        page: z.number().int().optional().describe('默认 1'),
-        pagesize: z.number().int().optional().describe('默认 300（v3 端点单页上限）'),
+        page: z.number().int().optional().describe('页码，默认 1'),
+        pagesize: z.number().int().optional().describe('每页数量，默认 300（v3 端点单页上限）'),
       },
     },
     async (p) => {
       let listid = p.listid;
       if (listid === 'favorite') {
-        const body = await call('user_playlist', {}, { requireLogin: true });
-        const fav = findFavoriteList(body?.data?.lists || body?.lists || []);
+        const body = await call('user_playlist', { pagesize: 100 }, { requireLogin: true });
+        const fav = findFavoriteList(playlistLists(body));
         if (!fav) throw new Error('未找到默认收藏夹，请先调用 kugou_get_user_playlists 查看歌单结构。');
         listid = String(fav.listid);
       }
-      const body = await call('playlist_track_all_new', { listid, page: p.page, pagesize: p.pagesize }, { requireLogin: true });
+      const page = p.page || 1;
+      const pagesize = p.pagesize || 300;
+      const body = await call('playlist_track_all_new', { listid, page, pagesize }, { requireLogin: true });
       const data = body?.data || body;
-      const lists = data?.lists || data?.list || [];
-      return text({ listid, total: data?.total ?? lists.length, list_ver: data?.list_ver, songs: lists.map(trimPlaylistSong).slice(0, p.pagesize || 300) });
+      const tracks = playlistTrackLists(body);
+      const total = data?.count ?? data?.total ?? tracks.length;
+      const first = (page - 1) * pagesize + 1;
+      return text({
+        listid,
+        total,
+        page,
+        returned: tracks.length,
+        has_more: first + tracks.length - 1 < total,
+        list_ver: data?.list_ver,
+        songs: tracks.map(trimPlaylistSong),
+        hint: first + tracks.length - 1 < total ? `共 ${total} 首，已返回第 ${page} 页（${first}-${first + tracks.length - 1}），传 page=${page + 1} 继续翻页。` : undefined,
+      });
     }
   );
 
@@ -795,8 +863,8 @@ function registerTools(server) {
       },
     },
     async (p) => {
-      const plBody = await call('user_playlist', {}, { requireLogin: true });
-      const lists = plBody?.data?.lists || plBody?.lists || [];
+      const plBody = await call('user_playlist', { pagesize: 100 }, { requireLogin: true });
+      const lists = playlistLists(plBody);
       const fav = findFavoriteList(lists);
       if (!fav) throw new Error(`未找到默认收藏夹。现有歌单：${lists.map((l) => `${l.listid}:${l.name}`).join('、').slice(0, 200)}`);
       const data = [p.name, p.hash, p.album_id || 0, p.album_audio_id || 0].join('|');
@@ -817,13 +885,12 @@ function registerTools(server) {
     },
     async (p) => {
       if (!p.hash && !p.mixsongid) throw new Error('必须提供 hash 或 mixsongid 之一。');
-      const plBody = await call('user_playlist', {}, { requireLogin: true });
-      const lists = plBody?.data?.lists || plBody?.lists || [];
+      const plBody = await call('user_playlist', { pagesize: 100 }, { requireLogin: true });
+      const lists = playlistLists(plBody);
       const fav = findFavoriteList(lists);
       if (!fav) throw new Error('未找到默认收藏夹。');
-      // 用 v3 端点取最新 fileid（旧端点 fileid 已失效，这是取消收藏不生效的根源）
-      const tracksBody = await call('playlist_track_all_new', { listid: fav.listid, pagesize: 300 }, { requireLogin: true });
-      const tracks = tracksBody?.data?.lists || tracksBody?.data?.list || [];
+      // 翻页拉全量后按 v3 端点的最新 fileid 定位（旧端点 fileid 已失效，这是取消收藏不生效的根源）
+      const tracks = await fetchAllPlaylistTracks(fav.listid);
       const matched = tracks.filter((t) => (p.hash ? String(t.hash || '').toLowerCase() === String(p.hash).toLowerCase() : Number(t.mixsongid ?? t.songid) === Number(p.mixsongid)));
       if (matched.length === 0) {
         return text({ success: false, message: '收藏夹中未找到该歌曲（可能本就未收藏）。', favorite_listid: fav.listid });
@@ -867,8 +934,7 @@ function registerTools(server) {
     },
     async (p) => {
       if (!p.hashes?.length && !p.mixsongids?.length) throw new Error('必须提供 hashes 或 mixsongids 之一。');
-      const tracksBody = await call('playlist_track_all_new', { listid: p.listid, pagesize: 300 }, { requireLogin: true });
-      const tracks = tracksBody?.data?.lists || tracksBody?.data?.list || [];
+      const tracks = await fetchAllPlaylistTracks(p.listid);
       const hashSet = new Set((p.hashes || []).map((h) => String(h).toLowerCase()));
       const idSet = new Set((p.mixsongids || []).map(Number));
       const matched = tracks.filter((t) => hashSet.has(String(t.hash || '').toLowerCase()) || idSet.has(Number(t.mixsongid ?? t.songid)));
