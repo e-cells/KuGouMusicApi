@@ -129,6 +129,9 @@ async function consturctServer(moduleDefs) {
     next();
   });
 
+  // MCP 端点单独放宽 JSON 上限（云盘上传等工具经 base64 传输音频文件，全局 100kb 不够）；
+  // 挂在全局 express.json 之前，请求体已解析时全局解析器自动跳过
+  app.post('/mcp', express.json({ limit: '200mb' }));
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
   // 听歌识曲接口以 application/octet-stream 传输 PCM 二进制，需 raw 解析

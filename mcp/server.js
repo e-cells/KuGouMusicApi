@@ -59,7 +59,8 @@ const startStdio = async () => {
 
 const startHttp = async (port) => {
   const app = express();
-  app.use(express.json());
+  // 云盘上传等工具经 base64 传输音频文件，放宽默认 100kb 上限
+  app.use(express.json({ limit: '200mb' }));
   app.post('/mcp', handleMcpRequest);
   app.get('/mcp', mcpGetHandler);
   app.listen(port, () => {

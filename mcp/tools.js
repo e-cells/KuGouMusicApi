@@ -5,12 +5,16 @@
  * - 登录：酷狗 App 扫码 / 微信扫码 / 概念版微信扫码（kugou_login_concept）/ 登录态查询 / 退出
  * - 概念版 VIP：签到领取（kugou_sign_in）、VIP 状态查询（kugou_vip_status）
  * - 搜索：歌曲 / 歌词 / MV / 专辑 / 歌手 / 热搜 / 联想建议
- * - 歌曲：播放/下载直链（概念版登录后自动走概念版通道，解锁概念版 VIP）、音质与版权信息、歌词获取
- * - 歌单：我的歌单、歌单歌曲、收藏/取消收藏、增删歌曲、新建/删除歌单
+ * - 排行榜：全部榜单索引、单榜完整歌曲
+ * - 歌曲：播放/下载直链（概念版登录后自动走概念版通道，解锁概念版 VIP）、音质与版权信息、歌词获取、相似歌曲
+ * - 评论：歌曲评论读取与发表
+ * - 歌单：我的歌单、歌单歌曲、收藏/取消收藏、增删歌曲、新建/删除歌单、详情/改名/排序
+ * - 云盘：云盘歌曲列表、云盘音乐直链、删除、上传（本地路径/base64）、上传前曲库匹配
  * - MV：播放地址、收藏管理
  * - 歌手/专辑：资料、歌曲列表、关注管理
  * - 下载：音频文件、歌词文件保存到本地
  * - 推荐：每日推荐、私人 FM
+ * - 个人数据：听歌排行、已购单曲/专辑（需登录）
  *
  * 所有工具基于项目编程式 API（main.js 导出的模块函数）进程内调用，
  * 会话（设备指纹 + 登录态）由 session.js 统一管理并持久化。
@@ -148,6 +152,7 @@ const trimPlaylist = (l) => ({
   type: l.type, // 0 自建 / 1 收藏
   is_def: l.is_def, // 2 新版默认收藏夹“我喜欢” / 1 旧版“默认收藏”
   special_flag: l.special_flag ?? (l.is_def ? 1 : undefined), // 默认收藏夹标记（兼容旧字段语义）
+  global_collection_id: l.global_collection_id, // 歌单详情接口（playlist_detail）所需的全局集合 id
   pic: l.pic ? String(l.pic).replace('{size}', '240') : undefined,
   create_time: l.create_time,
 });
@@ -161,6 +166,114 @@ const findFavoriteList = (lists = []) => {
     lists.find((l) => /我喜欢|默认收藏|我收藏/.test(String(l.name || '')) && Number(l.type) === 0) ||
     null
   );
+};
+
+/**
+ * 从 user_cloud 响应中提取云盘歌曲数组
+ * mcloudservice /v1/get_list 响应经 AES 解密，列表字段名多变（list/info/lists），做兼容提取
+ */
+const cloudLists = (body) => body?.data?.list || body?.data?.info || body?.data?.lists || body?.list || [];
+
+/** 从云盘歌曲列表裁剪要点（kv_id 为删除所需文件 ID，hash 为取直链所需） */
+const trimCloudSong = (s) => {
+  const item = {
+    fileid: s.kv_id ?? s.kvId ?? s.fileid ?? s.id,
+    name: s.name || s.filename || s.audio_name,
+    singer: s.author_name || s.singer_name || s.singername,
+    hash: s.hash || s.hash_std,
+    hash_std: s.hash_std,
+    audio_id: s.audio_id,
+    album_audio_id: s.album_audio_id,
+    ext: s.ext || s.extendname,
+    size: s.size ?? s.filesize,
+    duration_sec: s.timelen ? Math.floor(s.timelen / 1000) : s.duration,
+    bitrate: s.bitrate,
+  };
+  return Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined));
+};
+
+/**
+ * 从 kmr 系接口（rank_audio 完整榜单歌曲 / audio_related 相似歌曲）裁剪要点
+ * 这类接口歌曲信息分散在 base / audio_info / authors 子对象中；
+ * rank_audio 的 audio_info 无通用 hash，只有分音质 hash_128/320/flac
+ */
+const trimKmrSong = (s) => {
+  const b = s.base || s;
+  const a = s.audio_info || {};
+  const item = {
+    name: b.songname || b.audio_name || s.filename,
+    singer: b.author_name || (Array.isArray(s.authors) ? s.authors.map((x) => x.author_name).join('/') : undefined),
+    album: b.album_name || s.album_info?.album_name,
+    album_id: b.album_id,
+    album_audio_id: b.album_audio_id,
+    audio_id: b.audio_id ?? a.audio_id,
+    hash: a.hash || a.hash_128 || s.hash,
+    hash_320: a.hash_320,
+    hash_flac: a.hash_flac,
+    duration_sec: a.duration ? Math.floor(a.duration / 1000) : a.duration_128 ? Math.floor(a.duration_128 / 1000) : s.timelen ? Math.floor(s.timelen / 1000) : undefined,
+    mv_hash: Array.isArray(s.mvdata) && s.mvdata[0] ? s.mvdata[0].hash : undefined,
+  };
+  return Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined));
+};
+
+/** 排行榜列表项裁剪（songinfo 仅为每榜 3 首预览，完整榜单用 rank_audio） */
+const trimRank = (r) => ({
+  rankid: r.rankid,
+  name: r.rankname,
+  classify: r.classify,
+  intro: (r.intro || '').slice(0, 60),
+  update_frequency: r.update_frequency,
+  play_times: r.play_times,
+  cover: r.imgurl ? String(r.imgurl).replace('{size}', '240') : undefined,
+  preview: (r.songinfo || []).slice(0, 3).map((s) => ({
+    name: s.songname || s.SongName,
+    singer: s.author || s.author_name || s.SingerName,
+    album_audio_id: s.album_audio_id,
+  })),
+});
+
+/** 从歌曲评论列表裁剪要点（评论在响应顶层 list，总数在 count；like 是 {likenum,...} 对象） */
+const trimComment = (c) => {
+  const item = {
+    id: c.id,
+    user: c.user_name,
+    content: c.content,
+    time: c.addtime,
+    likes: typeof c.like === 'object' && c.like ? c.like.likenum ?? c.like.count : c.like,
+    replies: c.reply_num,
+    location: c.location,
+  };
+  return Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined));
+};
+
+/** 从听歌排行（user_history）裁剪要点（pc=播放次数，ot=最后播放时间戳） */
+const trimHistorySong = (h) => {
+  const info = h.info || {};
+  const item = {
+    play_count: h.pc,
+    last_play: h.ot ? new Date(h.ot * 1000).toISOString().slice(0, 10) : undefined,
+    name: info.name,
+    singer: info.singername,
+    hash: info.hash,
+    mixsongid: info.mixsongid ?? h.mxid,
+    album_id: info.album_id,
+    duration_sec: info.timelen ? Math.floor(info.timelen / 1000) : undefined,
+  };
+  return Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined));
+};
+
+/** 从已购列表（data.goods）裁剪要点，单曲与专辑共用 */
+const trimPurchased = (g) => {
+  const item = {
+    name: g.songname || g.albumname || g.name,
+    singer: g.author_name,
+    album_audio_id: g.album_audio_id,
+    album_id: g.album_id,
+    hash: g.hash,
+    global_collection_id: g.global_collection_id,
+    cover: g.album_cover ? String(g.album_cover).replace('{size}', '240') : undefined,
+  };
+  return Object.fromEntries(Object.entries(item).filter(([, v]) => v !== undefined));
 };
 
 /**
@@ -672,6 +785,55 @@ function registerTools(server) {
   );
 
   // ----------------------------------------------------------
+  // 排行榜组
+  // ----------------------------------------------------------
+
+  server.registerTool(
+    'kugou_get_rank_list',
+    {
+      title: '获取排行榜榜单',
+      description: '获取酷狗全部排行榜索引（TOP500、飙升榜、华语/欧美/日韩新歌等约 50 个），每个榜单附前 3 首歌曲预览。取某榜完整歌曲请用 kugou_get_rank_songs（传 rankid）。',
+      inputSchema: {},
+    },
+    async () => {
+      const body = await call('rank_list', {});
+      const ranks = body?.data?.info || body?.info || [];
+      return text({ total: body?.data?.total ?? ranks.length, ranks: ranks.map(trimRank) });
+    }
+  );
+
+  server.registerTool(
+    'kugou_get_rank_songs',
+    {
+      title: '获取排行榜完整歌曲',
+      description: '分页获取某个排行榜的完整歌曲列表（如 TOP500 共 500 首）。rankid 来自 kugou_get_rank_list。',
+      inputSchema: {
+        rankid: z.number().int().describe('榜单 id（kugou_get_rank_list 返回的 rankid，如 TOP500=8888）'),
+        page: z.number().int().min(1).optional().describe('页码，默认 1'),
+        pagesize: z.number().int().min(1).max(100).optional().describe('每页数量，默认 30'),
+      },
+    },
+    async (p) => {
+      const page = p.page || 1;
+      const pagesize = p.pagesize || 30;
+      const body = await call('rank_audio', { rankid: p.rankid, page, pagesize });
+      const data = body?.data || body;
+      const songs = data?.songlist || [];
+      const total = Number(data?.total ?? body?.total ?? songs.length) || songs.length;
+      const first = (page - 1) * pagesize + 1;
+      return text({
+        rankid: p.rankid,
+        total,
+        page,
+        returned: songs.length,
+        has_more: first + songs.length - 1 < total,
+        songs: songs.map(trimKmrSong),
+        hint: first + songs.length - 1 < total ? `共 ${total} 首，已返回第 ${page} 页，传 page=${page + 1} 继续翻页。` : undefined,
+      });
+    }
+  );
+
+  // ----------------------------------------------------------
   // 歌曲组
   // ----------------------------------------------------------
 
@@ -738,6 +900,31 @@ function registerTools(server) {
   );
 
   server.registerTool(
+    'kugou_get_similar_songs',
+    {
+      title: '获取相似歌曲',
+      description: '按歌曲找相似歌曲（“听完这首再来点类似的”）。传 album_audio_id（即搜索结果中的 album_audio_id/mixsongid）。',
+      inputSchema: {
+        album_audio_id: z.number().int().describe('歌曲 album_audio_id（kugou_search 结果的 album_audio_id 字段）'),
+        page: z.number().int().min(1).optional().describe('页码，默认 1'),
+        pagesize: z.number().int().min(1).max(100).optional().describe('每页数量，默认 30'),
+        sort: z.enum(['all', 'hot', 'new']).optional().describe('排序：all 综合（默认）/ hot 热门 / new 最新'),
+      },
+    },
+    async (p) => {
+      const body = await call('audio_related', {
+        album_audio_id: p.album_audio_id,
+        page: p.page || 1,
+        pagesize: p.pagesize || 30,
+        sort: p.sort || 'all',
+      });
+      const songs = Array.isArray(body?.data) ? body.data : [];
+      const total = Number(body?.total ?? songs.length) || songs.length;
+      return text({ album_audio_id: p.album_audio_id, total, returned: songs.length, songs: songs.map(trimKmrSong) });
+    }
+  );
+
+  server.registerTool(
     'kugou_get_lyric',
     {
       title: '获取歌词',
@@ -766,6 +953,51 @@ function registerTools(server) {
         charset: body?.charset,
         lyric: String(lyricText).slice(0, 20000),
       });
+    }
+  );
+
+  // ----------------------------------------------------------
+  // 评论组
+  // ----------------------------------------------------------
+
+  server.registerTool(
+    'kugou_get_song_comments',
+    {
+      title: '获取歌曲评论',
+      description: '分页获取歌曲评论（默认热门在前）。传歌曲的 mixsongid（即搜索结果中的 mixsongid/album_audio_id）。',
+      inputSchema: {
+        mixsongid: z.number().int().describe('歌曲 mixsongid（kugou_search 结果的 mixsongid 字段）'),
+        page: z.number().int().min(1).optional().describe('页码，默认 1'),
+        pagesize: z.number().int().min(1).max(100).optional().describe('每页数量，默认 30'),
+      },
+    },
+    async (p) => {
+      const body = await call('comment_music', { mixsongid: p.mixsongid, page: p.page || 1, pagesize: p.pagesize || 30 });
+      const list = body?.list || [];
+      return text({
+        mixsongid: p.mixsongid,
+        total: body?.count,
+        page: p.page || 1,
+        returned: list.length,
+        comments: list.map(trimComment),
+        hot_words: Array.isArray(body?.hot_word_list) ? body.hot_word_list.map((w) => w.hot_word || w.word).filter(Boolean).slice(0, 10) : undefined,
+      });
+    }
+  );
+
+  server.registerTool(
+    'kugou_send_comment',
+    {
+      title: '发表歌曲评论',
+      description: '以当前登录用户身份发表歌曲评论。需登录。内容对外公开可见，调用前应与用户确认内容。',
+      inputSchema: {
+        mixsongid: z.number().int().describe('歌曲 mixsongid（kugou_search 结果的 mixsongid 字段）'),
+        content: z.string().min(1).max(300).describe('评论内容（1-300 字）'),
+      },
+    },
+    async (p) => {
+      const body = await call('comment_music_send', { mixsongid: p.mixsongid, content: p.content }, { requireLogin: true });
+      return text({ success: body?.status === 1, mixsongid: p.mixsongid, response: body });
     }
   );
 
@@ -804,6 +1036,7 @@ function registerTools(server) {
         total: counts.total ?? lists.length,
         created_count: lists.filter((l) => Number(l.type) === 0).length,
         collected_count: counts.collected ?? lists.filter((l) => Number(l.type) === 1).length,
+        total_ver: body?.data?.total_ver, // 歌单改名的版本号（kugou_update_playlist 自动代查，一般无需手动传）
         favorite_list: fav ? trimPlaylist(fav) : null,
         playlists: lists.map(trimPlaylist),
         hint: '收藏/取消收藏歌曲无需手动指定 listid（工具会自动使用 favorite_list）；歌单增删歌曲用各工具传 listid。',
@@ -973,6 +1206,236 @@ function registerTools(server) {
     async (p) => {
       const body = await call('playlist_del', { listid: p.listid }, { requireLogin: true });
       return text({ success: body?.status === 1, listid: p.listid, response: body });
+    }
+  );
+
+  server.registerTool(
+    'kugou_get_playlist_detail',
+    {
+      title: '获取歌单详情',
+      description: '获取歌单完整元信息（创建者、简介、标签、收藏数、发布时间等）。传自己的 listid（自动换算 global_collection_id）或任意歌单的 global_collection_id。',
+      inputSchema: {
+        listid: z.string().optional().describe('自己的歌单 listid（与 global_collection_id 二选一，自动换算）'),
+        global_collection_id: z.string().optional().describe('歌单全局集合 id（kugou_get_user_playlists 每项的 global_collection_id，支持他人歌单）'),
+      },
+    },
+    async (p) => {
+      let gcid = p.global_collection_id;
+      if (!gcid) {
+        if (!p.listid) throw new Error('必须提供 listid 或 global_collection_id 之一。');
+        const plBody = await call('user_playlist', { pagesize: 100 }, { requireLogin: true });
+        const target = playlistLists(plBody).find((l) => String(l.listid) === String(p.listid));
+        if (!target?.global_collection_id) throw new Error(`歌单 ${p.listid} 不存在或缺少 global_collection_id，请用 kugou_get_user_playlists 确认。`);
+        gcid = target.global_collection_id;
+      }
+      const body = await call('playlist_detail', { ids: gcid }, { requireLogin: true });
+      const items = Array.isArray(body?.data) ? body.data : [];
+      return text({ global_collection_id: gcid, count: items.length, details: items.map(trimPlaylist) });
+    }
+  );
+
+  server.registerTool(
+    'kugou_update_playlist',
+    {
+      title: '修改歌单信息',
+      description: '修改自建歌单的名称/简介/标签/排序号（total_ver 与 type 自动代查，无需手动传）。需登录。',
+      inputSchema: {
+        listid: z.string().describe('歌单 listid'),
+        name: z.string().optional().describe('新名称（不传则不变）'),
+        intro: z.string().optional().describe('新简介（不传则保持原值）'),
+        tags: z.string().optional().describe('新标签（逗号分隔，不传则保持原值）'),
+        sort: z.number().int().optional().describe('排序号（影响歌单在列表中的位置）'),
+      },
+    },
+    async (p) => {
+      if (!p.name && !p.intro && !p.tags && p.sort === undefined) throw new Error('至少提供 name / intro / tags / sort 之一。');
+      const plBody = await call('user_playlist', { pagesize: 100 }, { requireLogin: true });
+      const lists = playlistLists(plBody);
+      const target = lists.find((l) => String(l.listid) === String(p.listid));
+      if (!target) throw new Error(`未找到歌单 ${p.listid}，请用 kugou_get_user_playlists 确认 listid。`);
+      // 未显式传 intro/tags 时沿用现值，避免改名把简介/标签清空
+      const body = await call(
+        'playlist_update',
+        {
+          listid: p.listid,
+          type: Number(target.type) || 0,
+          total_ver: Number(plBody?.data?.total_ver) || 0,
+          name: p.name,
+          intro: p.intro ?? (Array.isArray(target.tags) ? undefined : target.intro) ?? '',
+          tags: p.tags ?? (Array.isArray(target.tags) ? target.tags.join(',') : target.tags) ?? '',
+          sort: p.sort ?? (Number(target.sort) || 0),
+        },
+        { requireLogin: true }
+      );
+      return text({ success: body?.status === 1, listid: p.listid, updated: Object.keys(p).filter((k) => k !== 'listid'), response: body });
+    }
+  );
+
+  server.registerTool(
+    'kugou_sort_playlist_tracks',
+    {
+      title: '歌单内歌曲排序',
+      description: '自定义歌单内歌曲顺序（可对“我喜欢”使用）。传 fileid 与目标位次（1 起），list_ver 自动代查。fileid 来自 kugou_get_playlist_tracks。需登录。',
+      inputSchema: {
+        listid: z.string().describe('歌单 listid'),
+        tracks: require('zod')
+          .array(z.object({ fileid: z.union([z.string(), z.number()]), sort: z.number().int().min(1) }))
+          .min(1)
+          .describe('排序项：fileid（歌单歌曲的 fileid）+ sort（目标位次，从 1 开始）'),
+      },
+    },
+    async (p) => {
+      // 取第 1 页拿 list_ver（版本号代查），fileid 与位次由调用方给出
+      const firstPage = await call('playlist_track_all_new', { listid: p.listid, page: 1, pagesize: 1 }, { requireLogin: true });
+      const listVer = Number(firstPage?.data?.list_ver) || 0;
+      const plBody = await call('user_playlist', { pagesize: 100 }, { requireLogin: true });
+      const target = playlistLists(plBody).find((l) => String(l.listid) === String(p.listid));
+      const data = p.tracks.map((t) => `${t.fileid}|${t.sort}`).join(',');
+      const body = await call('playlist_tracks_sort', { listid: p.listid, type: Number(target?.type) || 0, list_ver: listVer, data }, { requireLogin: true });
+      return text({ success: body?.status === 1, listid: p.listid, sorted: p.tracks.length, response: body });
+    }
+  );
+
+  // ----------------------------------------------------------
+  // 云盘组（用户上传音乐管理）
+  // ----------------------------------------------------------
+
+  server.registerTool(
+    'kugou_get_cloud_songs',
+    {
+      title: '获取云盘歌曲列表',
+      description: '分页列出已上传到用户云盘的音乐（含 fileid/kv_id——删除云盘音乐所需，hash——获取云盘直链所需）。需登录。',
+      inputSchema: {
+        page: z.number().int().min(1).optional().describe('页码，默认 1'),
+        pagesize: z.number().int().min(1).max(100).optional().describe('每页数量，默认 30'),
+      },
+    },
+    async (p) => {
+      const page = p.page || 1;
+      const pagesize = p.pagesize || 30;
+      const body = await call('user_cloud', { page, pagesize }, { requireLogin: true });
+      const data = body?.data || body;
+      const list = cloudLists(body);
+      // 云盘列表总数在 list_count（实测 /v1/get_list 响应，另有 used/max_size 容量信息）
+      const total = Number(data?.list_count ?? data?.count ?? data?.total ?? list.length) || list.length;
+      const first = (page - 1) * pagesize + 1;
+      return text({
+        total,
+        page,
+        returned: list.length,
+        has_more: first + list.length - 1 < total,
+        capacity_mb:
+          Number(data?.max_size) > 0
+            ? { used: Math.round((data.used_size || 0) / 1048576), max: Math.round(data.max_size / 1048576) }
+            : undefined,
+        songs: list.map(trimCloudSong),
+        hint: first + list.length - 1 < total ? `共 ${total} 首，已返回第 ${page} 页（${first}-${first + list.length - 1}），传 page=${page + 1} 继续翻页。` : undefined,
+      });
+    }
+  );
+
+  server.registerTool(
+    'kugou_get_cloud_song_url',
+    {
+      title: '获取云盘音乐直链',
+      description: '获取云盘音乐的播放/下载直链（hash 来自 kugou_get_cloud_songs 列表）。云盘文件不受曲库版权限制；已匹配曲库的文件也可改用 kugou_get_song_url 获取。需登录。',
+      inputSchema: {
+        hash: z.string().describe('云盘文件 hash（列表中的 hash 字段，大小写不敏感）'),
+        album_audio_id: z.number().optional().describe('专辑音频 id（提高命中率）'),
+        audio_id: z.number().optional().describe('音频 id（提高命中率）'),
+        name: z.string().optional().describe('云盘音乐名称'),
+      },
+    },
+    async (p) => {
+      const body = await call('user_cloud_url', { hash: p.hash, album_audio_id: p.album_audio_id, audio_id: p.audio_id, name: p.name }, { requireLogin: true });
+      const d = body?.data || body;
+      const rawUrls = d?.url ?? body?.url;
+      const urls = (Array.isArray(rawUrls) ? rawUrls : rawUrls ? [rawUrls] : []).filter(Boolean);
+      const backups = d?.backupUrl ?? body?.backupUrl;
+      const timeLength = d?.timeLength ?? body?.timeLength;
+      return text({
+        hash: p.hash,
+        status: body?.status,
+        url_count: urls.length,
+        urls,
+        backup_urls: Array.isArray(backups) ? backups : backups ? [backups] : [],
+        size: d?.fileSize ?? body?.fileSize,
+        ext: d?.extName ?? body?.extName,
+        duration_sec: timeLength ? Math.floor(timeLength / 1000) : undefined,
+        hint: urls.length ? undefined : '未获取到直链：请确认 hash 来自 kugou_get_cloud_songs 列表（云盘文件 hash），或稍后重试。',
+      });
+    }
+  );
+
+  server.registerTool(
+    'kugou_delete_cloud_songs',
+    {
+      title: '删除云盘音乐',
+      description: '从用户云盘删除音乐（不可恢复）。fileid 传 kugou_get_cloud_songs 返回的 fileid（kv_id），支持批量。需登录。',
+      inputSchema: {
+        fileids: z
+          .union([z.array(z.union([z.string(), z.number()])), z.string(), z.number()])
+          .describe('云盘文件 ID（kv_id），单个、多个数组或英文逗号分隔字符串'),
+        album_audio_ids: z.union([z.array(z.union([z.string(), z.number()])), z.string(), z.number()]).optional().describe('对应的专辑音频 id（与 fileids 顺序对应，可选）'),
+      },
+    },
+    async (p) => {
+      const body = await call('user_cloud_del', { fileids: p.fileids, album_audio_ids: p.album_audio_ids }, { requireLogin: true });
+      return text({ success: body?.status === 1, removed_ids: [].concat(p.fileids).map(String), response: body });
+    }
+  );
+
+  server.registerTool(
+    'kugou_cloud_match',
+    {
+      title: '云盘上传前曲库匹配',
+      description: '按文件 hash（即文件 MD5）匹配酷狗曲库，返回 hash_std/audio_id/album_audio_id 等，用于上传前预查或手动修正关联信息。kugou_upload_cloud_song 默认已自动匹配，无需先行调用。',
+      inputSchema: {
+        hash: z.string().describe('文件 hash（MD5，大小写不敏感），多个用英文逗号分隔'),
+        album_audio_id: z.union([z.string(), z.number()]).optional().describe('已知专辑音频 id 时可辅助匹配'),
+      },
+    },
+    async (p) => {
+      const body = await call('user_cloud_match', { hash: p.hash, album_audio_id: p.album_audio_id }, { requireLogin: true });
+      const out = { status: body?.status, match: body?.match ?? null };
+      if (Array.isArray(body?.match_list)) out.match_list = body.match_list;
+      if (body?.status !== 1) out.response = body;
+      return text(out);
+    }
+  );
+
+  server.registerTool(
+    'kugou_upload_cloud_song',
+    {
+      title: '上传音乐到云盘',
+      description: '上传音乐文件到用户云盘。file_path（服务端本地路径，如 kugou_download_song 的保存路径）与 file_base64（文件内容 base64，适合远程推送小文件）二选一。默认按文件 MD5 自动匹配曲库并把 hash_std/audio_id/album_audio_id 写入云盘（匹配后可与标准曲库关联、参与搜索）。需登录。',
+      inputSchema: {
+        file_path: z.string().optional().describe('服务端本地文件路径（与 file_base64 二选一；MCP 部署在远端时该路径须为服务端可访问路径）'),
+        file_base64: z.string().optional().describe('文件内容 base64（与 file_path 二选一；HTTP 接入受 /mcp 请求体上限约束，大文件建议用 file_path）'),
+        name: z.string().optional().describe('云盘显示名称，默认「歌手 - 曲名.扩展名」'),
+        author_name: z.string().optional().describe('歌手名'),
+        extendname: z.string().optional().describe('文件扩展名，默认 mp3'),
+        hash_std: z.string().optional().describe('曲库标准 hash（默认自动匹配）'),
+        audio_id: z.number().optional().describe('音频 id（默认自动匹配）'),
+        album_audio_id: z.number().optional().describe('专辑音频 id（默认自动匹配）'),
+        auto_match: z.boolean().optional().describe('是否自动匹配曲库，默认 true'),
+      },
+    },
+    async (p) => {
+      let data;
+      if (p.file_path) {
+        const filePath = path.resolve(p.file_path);
+        if (!fs.existsSync(filePath)) throw new Error(`文件不存在：${filePath}`);
+        data = fs.readFileSync(filePath);
+      } else if (p.file_base64) {
+        data = Buffer.from(p.file_base64, 'base64');
+      } else {
+        throw new Error('必须提供 file_path 或 file_base64 之一。');
+      }
+      if (!data.length) throw new Error('文件内容为空。');
+      const { file_path: _filePath, file_base64: _fileBase64, ...params } = p;
+      const body = await call('user_cloud_upload', { ...params, data }, { requireLogin: true });
+      return text({ success: body?.status === 1, response: body });
     }
   );
 
@@ -1226,6 +1689,67 @@ function registerTools(server) {
       const filePath = path.join(saveDir, `${safeFilename(p.name)}.lrc`);
       fs.writeFileSync(filePath, lyricText, 'utf8');
       return text({ saved: true, path: filePath, size_bytes: Buffer.byteLength(lyricText), song: cand.song, singer: cand.singer });
+    }
+  );
+
+  // ----------------------------------------------------------
+  // 个人数据组（听歌数据与已购资产）
+  // ----------------------------------------------------------
+
+  server.registerTool(
+    'kugou_get_play_history',
+    {
+      title: '获取听歌排行',
+      description: '获取账号听歌排行（按播放次数排序，含每首歌的播放次数与最后播放日期），是“我最近都在听什么”的数据来源。数据量大时以 bp 游标翻页。需登录。',
+      inputSchema: {
+        bp: z.string().optional().describe('翻页游标（上次响应返回的 next_bp，不传取第一页）'),
+      },
+    },
+    async (p) => {
+      const body = await call('user_history', p.bp ? { bp: p.bp } : {}, { requireLogin: true });
+      const data = body?.data || body;
+      const songs = data?.songs || [];
+      return text({
+        count: songs.length,
+        has_more: Boolean(data?.has_more) && !data?.bp_finished,
+        next_bp: data?.bp,
+        songs: songs.map(trimHistorySong),
+        hint: data?.has_more && !data?.bp_finished ? '还有更多，把 next_bp 作为 bp 参数传入取下一页。' : undefined,
+      });
+    }
+  );
+
+  server.registerTool(
+    'kugou_get_purchased_songs',
+    {
+      title: '获取已购单曲',
+      description: '分页列出账号已付费购买的单曲。需登录。',
+      inputSchema: {
+        page: z.number().int().min(1).optional().describe('页码，默认 1'),
+        pagesize: z.number().int().min(1).max(100).optional().describe('每页数量，默认 50'),
+      },
+    },
+    async (p) => {
+      const body = await call('user_purchased_songs', { page: p.page || 1, pagesize: p.pagesize || 50 }, { requireLogin: true });
+      const goods = body?.data?.goods || [];
+      return text({ total: body?.data?.total, page: p.page || 1, returned: goods.length, songs: goods.map(trimPurchased) });
+    }
+  );
+
+  server.registerTool(
+    'kugou_get_purchased_albums',
+    {
+      title: '获取已购专辑',
+      description: '分页列出账号已付费购买的专辑。需登录。',
+      inputSchema: {
+        page: z.number().int().min(1).optional().describe('页码，默认 1'),
+        pagesize: z.number().int().min(1).max(100).optional().describe('每页数量，默认 15'),
+      },
+    },
+    async (p) => {
+      const body = await call('user_purchased_albums', { page: p.page || 1, pagesize: p.pagesize || 15 }, { requireLogin: true });
+      const goods = body?.data?.goods || [];
+      return text({ total: body?.data?.total, page: p.page || 1, returned: goods.length, albums: goods.map(trimPurchased) });
     }
   );
 

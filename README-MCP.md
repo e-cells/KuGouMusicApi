@@ -117,10 +117,19 @@ kugou_login_concept → 用户微信扫码 → kugou_login_concept_check(uuid) �
 - `kugou_search_hot` — 实时热搜榜
 - `kugou_search_suggest` — 关键词联想
 
+### 排行榜
+- `kugou_get_rank_list` — 全部榜单索引（约 50 个，附每榜前 3 首预览）
+- `kugou_get_rank_songs` — 单榜完整歌曲（分页，如 TOP500）
+
 ### 歌曲播放与信息
 - `kugou_get_song_url` — 多音质播放/下载直链（128/320/flac/high/蝰蛇音质）。概念版登录后自动走概念版通道（概念版 VIP 生效，`identity="concept"`），否则走标准版通道
 - `kugou_get_song_info` — 各音质可用性、大小与所需会员类型
 - `kugou_get_lyric` — 一步获取带时间轴歌词（LRC）或逐字歌词（KRC）
+- `kugou_get_similar_songs` — 按歌曲找相似歌曲
+
+### 评论
+- `kugou_get_song_comments` — 歌曲评论（热门在前，分页）
+- `kugou_send_comment` — 发表歌曲评论（需登录，内容公开可见）
 
 ### 歌单与收藏（需登录）
 - `kugou_get_user_playlists` — 我的全部歌单（自动标注默认收藏夹）
@@ -128,6 +137,16 @@ kugou_login_concept → 用户微信扫码 → kugou_login_concept_check(uuid) �
 - `kugou_favorite_song` / `kugou_unfavorite_song` — 收藏 / 取消收藏歌曲（自动定位默认收藏夹；取消收藏使用 v3 端点的最新 fileid）
 - `kugou_playlist_add_songs` / `kugou_playlist_remove_songs` — 歌单增删歌曲
 - `kugou_create_playlist` / `kugou_delete_playlist` — 新建 / 删除（取消收藏）歌单
+- `kugou_get_playlist_detail` — 歌单元信息（listid 自动换算 global_collection_id，支持他人歌单）
+- `kugou_update_playlist` — 改名/简介/标签/排序号（版本号自动代查）
+- `kugou_sort_playlist_tracks` — 歌单内歌曲自定义排序（可用于“我喜欢”）
+
+### 云盘（需登录）
+- `kugou_get_cloud_songs` — 分页列出云盘音乐（含删除用 `fileid`/kv_id、取直链用 `hash`）
+- `kugou_get_cloud_song_url` — 云盘音乐播放/下载直链（云盘文件不受曲库版权限制）
+- `kugou_delete_cloud_songs` — 删除云盘音乐（不可恢复，支持批量）
+- `kugou_cloud_match` — 上传前按文件 MD5 匹配曲库（`hash_std`/`audio_id`/`album_audio_id`）
+- `kugou_upload_cloud_song` — 上传音乐到云盘（`file_path` 服务端本地路径或 `file_base64`，默认自动匹配曲库）
 
 ### MV
 - `kugou_get_mv_url` — MV 播放/下载地址
@@ -141,6 +160,10 @@ kugou_login_concept → 用户微信扫码 → kugou_login_concept_check(uuid) �
 ### 本地下载
 - `kugou_download_song` — 拉取直链并保存音频文件（默认 `./downloads`，可指定音质）
 - `kugou_download_lyric` — 歌词保存为 `.lrc` 文件
+
+### 个人数据（需登录）
+- `kugou_get_play_history` — 听歌排行（播放次数 + 最后播放日期，bp 游标翻页）
+- `kugou_get_purchased_songs` / `kugou_get_purchased_albums` — 已购单曲 / 专辑
 
 ### 推荐（需登录）
 - `kugou_get_recommend_songs` — 每日推荐
