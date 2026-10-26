@@ -1,5 +1,5 @@
 const CryptoJS = require('crypto-js');
-const forge = require('node-forge');
+const nodeCrypto = require('node:crypto');
 const { randomString } = require('./util');
 const publicRasKey = `-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDIAG7QOELSYoIJvTFJhMpe1s/gbjDJX51HBNnEl5HXqTW6lQ7LC8jr9fWZTwusknp+sVGzwd40MwP6U5yDE27M/X1+UR4tvOGOqp94TJtQ1EPnWGWXngpeIW5GxoQGao1rmYWAu6oi1z9XkChrsUdC6DJE5E221wf/4WLFxwAtRQIDAQAB\n-----END PUBLIC KEY-----`;
 const publicLiteRasKey = `-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDECi0Np2UR87scwrvTr72L6oO01rBbbBPriSDFPxr3Z5syug0O24QyQO8bg27+0+4kBzTBTBOZ/WWU0WryL1JSXRTXLgFVxtzIY41Pe7lPOgsfTCn5kZcvKhYKJesKnnJDNr5/abvTGf+rHG3YRwsCHcQ08/q6ifSioBszvb3QiwIDAQAB\n-----END PUBLIC KEY-----`;
@@ -127,32 +127,39 @@ function wordArrayToBuffer(wordArray) {
   return uint8;
 }
 
-function uint8ArrayToHex(arr) {
-  return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
-}
 
 function utf8WordArray(input) {
   return typeof input === 'string' ? CryptoJS.enc.Utf8.parse(input) : wordArrayFromBuffer(input);
 }
 
-function getForgePublicKey(pem) {
+function getPublicKey(pem) {
   if (!rsaKeyCache.has(pem)) {
-    rsaKeyCache.set(pem, forge.pki.publicKeyFromPem(pem));
+    rsaKeyCache.set(pem, nodeCrypto.createPublicKey(pem));
   }
   return rsaKeyCache.get(pem);
 }
 
-function bufferToBinaryString(buffer) {
-  let out = '';
-  for (let i = 0; i < buffer.length; i++) out += String.fromCharCode(buffer[i]);
-  return out;
+/** RSA 公钥模长（字节），1024 位密钥 → 128 */
+function rsaKeyLength(key) {
+  const bits = key.asymmetricKeyDetails?.modulusLength;
+  if (bits) return Math.ceil(bits / 8);
+  const jwk = key.export({ format: 'jwk' }); // 旧 Node 无 asymmetricKeyDetails 时走 JWK 兜底
+  return Buffer.from(jwk.n, 'base64').length;
 }
 
+/**
+ * 无填充 RSA（textbook RSA）：明文右侧补零至模长后直接 modPow
+ * 与原 node-forge 实现逐位等价（ forge.jsbn.BigInteger modPow → RSA_NO_PADDING ）
+ */
 function rsaRawEncrypt(buffer, publicKey) {
-  const keyLength = Math.ceil(publicKey.n.bitLength() / 8);
-  const message = new forge.jsbn.BigInteger(uint8ArrayToHex(buffer), 16);
-  const encrypted = message.modPow(publicKey.e, publicKey.n);
-  return encrypted.toString(16).padStart(keyLength * 2, '0');
+  const keyLength = rsaKeyLength(publicKey);
+  if (buffer.length > keyLength) throw new Error('Data length exceeds key size');
+  let padded = Buffer.from(buffer);
+  if (buffer.length < keyLength) {
+    padded = Buffer.alloc(keyLength);
+    padded.set(buffer);
+  }
+  return nodeCrypto.publicEncrypt({ key: publicKey, padding: nodeCrypto.constants.RSA_NO_PADDING }, padded).toString('hex');
 }
 
 /**
@@ -239,7 +246,7 @@ function cryptoAesDecrypt(data, key, iv) {
 }
 
 /**
- * RSA加密
+ * RSA加密（无填充 RSA，供 login/user 系接口的 pk/p 参数使用）
  * @param {BufferLike} data
  * @param {string?} publicKey
  * @returns {string} hex
@@ -248,25 +255,14 @@ function cryptoRSAEncrypt(data, publicKey) {
   const isLite = process.env.platform === 'lite';
   const buffer = normalizeBuffer(data);
   const pem = publicKey || (isLite ? publicLiteRasKey : publicRasKey);
-  const key = getForgePublicKey(pem);
-  const keyLength = Math.ceil(key.n.bitLength() / 8);
-
-  if (buffer.length > keyLength) throw new Error('Data length exceeds key size');
-  let padded = buffer;
-  if (buffer.length < keyLength) {
-    padded = new Uint8Array(keyLength);
-    padded.set(buffer);
-  }
-
-  return rsaRawEncrypt(padded, key);
+  return rsaRawEncrypt(buffer, getPublicKey(pem));
 }
 
 function rsaEncrypt2(data) {
   const isLite = process.env.platform === 'lite';
-  const buffer = normalizeBuffer(data);
-  const key = getForgePublicKey(isLite ? publicLiteRasKey : publicRasKey);
-  const encrypted = key.encrypt(bufferToBinaryString(buffer), 'RSAES-PKCS1-V1_5');
-  return forge.util.bytesToHex(encrypted);
+  const buffer = Buffer.from(normalizeBuffer(data));
+  const key = getPublicKey(isLite ? publicLiteRasKey : publicRasKey);
+  return nodeCrypto.publicEncrypt({ key, padding: nodeCrypto.constants.RSA_PKCS1_PADDING }, buffer).toString('hex');
 }
 
 function playlistAesEncrypt(data) {

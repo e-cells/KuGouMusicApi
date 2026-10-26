@@ -17,14 +17,14 @@
  *
  * @module generate_simulate
  * @requires crypto-js - AES 加密库
- * @requires node-forge - RSA 加密库
+ * @requires node:crypto - RSA-OAEP 加密（内置模块）
  * @requires ./util - 工具函数（randomString）
  */
 
+const nodeCrypto = require('node:crypto');
 const { randomString } = require('./util');
 
 const CryptoJS = require('crypto-js');
-const forge = require('node-forge');
 
 /**
  * RSA 公钥（PEM 格式）
@@ -333,16 +333,17 @@ const generateSimulate = (mid, userid, dfid, webglHash) => {
 
   // 第2步: RSA-OAEP SHA-256 加密 AES 密钥 → SID
   // - 使用酷狗服务器的 RSA 公钥加密 AES 密钥
-  // - 哈希算法: SHA-256
-  // - MGF1 哈希: SHA-256（与主哈希一致）
+  // - 哈希算法: SHA-256（主哈希与 MGF1 一致）
   // - 输出: Base64 编码的密文
-  const rsaKey = forge.pki.publicKeyFromPem(publicKey);
-
-  const encrypted = rsaKey.encrypt(key, 'RSA-OAEP', {
-    md: forge.md.sha256.create(),        // 主哈希算法
-    mgf1: { md: forge.md.sha256.create() }, // MGF1 掩码生成函数的哈希算法
-  });
-  const ciphertext = forge.util.encode64(encrypted); // Base64 编码
+  const encrypted = nodeCrypto.publicEncrypt(
+    {
+      key: publicKey,
+      padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: 'sha256',
+    },
+    Buffer.from(key, 'utf8')
+  );
+  const ciphertext = encrypted.toString('base64'); // Base64 编码
 
   // 返回 EDT（加密的行为数据）和 SID（加密的 AES 密钥）
   return { edt: edtData, sid: ciphertext };
